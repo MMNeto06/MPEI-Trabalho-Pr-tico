@@ -4,6 +4,7 @@
 %   projeto_meteorologia/
 %   ├── data/weather_data.csv
 %   ├── naive_bayes/nb_train.m  nb_predict.m
+%   ├── bloom_filter/bloom_init.m  bloom_insert.m  bloom_check.m  bloom_hash.m  bloom_fp_rate.m
 %   ├── main_demo.m
 %   └── evaluate.m
 
@@ -44,7 +45,22 @@ YTeste  = Y(idxTeste);
 
 fprintf('Treino: %d amostras | Teste: %d amostras\n\n', nTreino, numel(idxTeste));
 
-%% 3) Treino
+%% 3) Bloom Filter
+fprintf('=== A construir Bloom Filter ===\n');
+
+fpr_alvo = 0.01;
+m_bf = ceil(-(nTreino * log(fpr_alvo)) / (log(2)^2));
+k_bf = max(1, round((m_bf / nTreino) * log(2)));
+
+bf = bloom_init(m_bf, k_bf);
+for i = 1:nTreino
+    bf = bloom_insert(bf, mat2str(XTreino(i,:), 4));
+end
+
+fprintf('  m = %d bits | k = %d hashes | FPR teórica = %.4f%%\n\n', ...
+    m_bf, k_bf, bloom_fp_rate(bf) * 100);
+
+%% 4) Treino Naive-Bayes
 fprintf('=== A treinar Naive Bayes Gaussiano ===\n');
 [mu, sigma, logPrior, classes] = nb_train(XTreino, YTreino);
 
@@ -62,15 +78,15 @@ for c = 1:numel(classes)
 end
 fprintf('\n');
 
-%% 4) Previsão
+%% 5) Previsão
 fprintf('=== A classificar conjunto de teste ===\n');
 [previsoes, probas] = nb_predict(XTeste, mu, sigma, logPrior, classes);
 
-%% 5) Avaliação  (delega em evaluate.m)
+%% 6) Avaliação  (delega em evaluate.m)
 fprintf('\n=== Avaliação ===\n');
-evaluate(YTeste, previsoes, classes);
+evaluate(YTeste, previsoes, classes, XTeste, bf);
 
-%% 6) Exemplo de previsão para um novo ponto
+%% 7) Exemplo de previsão para um novo ponto
 fprintf('\n=== Exemplo de previsão manual ===\n');
 novoPonto   = [5.0, 8.0, 3.0, 4.5];   % [precipitation, temp_max, temp_min, wind]
 nomesCampos = {'precipitation', 'temp_max', 'temp_min', 'wind'};
@@ -81,8 +97,14 @@ for j = 1:nFeatures
 end
 fprintf('\n');
 
-[prevNovo, probNovo] = nb_predict(novoPonto, mu, sigma, logPrior, classes);
+chaveNovo = mat2str(novoPonto, 4);
+if bloom_check(bf, chaveNovo)
+    fprintf('Bloom Filter: padrão provavelmente visto no treino.\n');
+else
+    fprintf('Bloom Filter: padrão NOVO — não está no histórico de treino.\n');
+end
 
+[prevNovo, probNovo] = nb_predict(novoPonto, mu, sigma, logPrior, classes);
 fprintf('\nProbabilidades por classe:\n');
 for c = 1:numel(classes)
     fprintf('  %-12s  %.4f\n', classes{c}, probNovo(c));

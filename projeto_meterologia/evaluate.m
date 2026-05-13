@@ -1,4 +1,4 @@
-function evaluate(YTeste, previsoes, classes)
+function evaluate(YTeste, previsoes, classes, XTeste, bf)
 %EVALUATE  Calcula e imprime métricas de classificação + matriz de confusão.
 %
 %   evaluate(YTeste, previsoes, classes)
@@ -7,15 +7,31 @@ function evaluate(YTeste, previsoes, classes)
 %     YTeste    — vetor categorical com os rótulos reais
 %     previsoes — vetor categorical com os rótulos previstos (saída de nb_predict)
 %     classes   — cell array com os nomes das classes (saída de nb_train)
+%     XTeste    — matrix de features dos dias de teste (linhas = dias)
+%     bf        — struct do Bloom Filter (saída de bloom_init + bloom_insert)
 
     nClasses = numel(classes);
     nTeste   = numel(YTeste);
 
-    %% 1) Acurácia global
+    %% 1) Bloom Filter — verificar dias "nunca vistos"
+    fprintf('=== Bloom Filter: Dias de Teste vs Histórico ===\n');
+    nNaoVisto = 0;
+    for i = 1:nTeste
+        chave = mat2str(XTeste(i, :), 4);      % converte linha para string
+        if ~bloom_check(bf, chave)
+            nNaoVisto = nNaoVisto + 1;
+        end
+    end
+    nVisto = nTeste - nNaoVisto;
+    fprintf('  Dias provavelmente vistos no treino : %d / %d\n', nVisto,    nTeste);
+    fprintf('  Dias definitivamente novos          : %d / %d\n', nNaoVisto, nTeste);
+    fprintf('  FPR estimada do filtro              : %.4f%%\n\n', bloom_fp_rate(bf) * 100);
+
+    %% 2) Acurácia global
     acuracia = mean(previsoes == YTeste);
     fprintf('Acurácia global: %.4f  (%.2f%%)\n', acuracia, acuracia * 100);
 
-    %% 2) Precision, Recall e F1 por classe
+    %% 3) Precision, Recall e F1 por classe
     fprintf('\n%-12s  %9s  %9s  %9s  %6s\n', 'Classe', 'Precision', 'Recall', 'F1-Score', 'Suporte');
     fprintf('%s\n', repmat('-', 1, 55));
 
@@ -55,7 +71,7 @@ function evaluate(YTeste, previsoes, classes)
         sum(f1scores  .* suportes) / nTeste, ...
         nTeste);
 
-    %% 3) Matriz de confusão (texto)
+    %% 4) Matriz de confusão (texto)
     fprintf('\n--- Matriz de Confusão ---\n');
     confMatrix = confusionmat(YTeste, previsoes, 'Order', classes);
 
@@ -76,7 +92,7 @@ function evaluate(YTeste, previsoes, classes)
     end
     fprintf('^ Real\n');
 
-    %% 4) Figura: matriz de confusão visual (se houver display disponível)
+    %% 5) Figura: matriz de confusão visual (se houver display disponível)
     try
         figure('Name', 'Matriz de Confusão');
         cm = confusionchart(YTeste, previsoes, ...
