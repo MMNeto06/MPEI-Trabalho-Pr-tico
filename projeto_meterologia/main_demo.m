@@ -12,6 +12,8 @@
 % Garante que os caminhos funcionam independentemente do working directory
 baseDir = fileparts(mfilename('fullpath'));
 addpath(fullfile(baseDir, 'naive_bayes'));
+addpath(fullfile(baseDir, 'bloom_filter'));
+addpath(fullfile(baseDir, 'minhash'));
 
 %% 1) Carregar e preparar os dados
 fprintf('=== A carregar dados ===\n');
