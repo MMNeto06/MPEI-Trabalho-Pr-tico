@@ -18,7 +18,7 @@ headers = next(reader)
 # snow       | WT04 WT06 WT09 WT18      | SNOW > 0 | SNWD > 0
 # ---------------------------------------------------------------------------
 
-FOG_TYPES     = {'WT01', 'WT02', 'WT08', 'WT21', 'WT22'}
+#FOG_TYPES     = {'WT01', 'WT02', 'WT08', 'WT21', 'WT22'}
 DRIZZLE_TYPES = {'WT13', 'WT14'}
 RAIN_TYPES    = {'WT03', 'WT05', 'WT16', 'WT17', 'WT19'}
 SNOW_TYPES    = {'WT04', 'WT06', 'WT09', 'WT18'}
@@ -37,8 +37,8 @@ def wt_active(row_dict, code):
 
 def classify_weather(d):
     weather = 'sun'
-    if any(wt_active(d, wt) for wt in FOG_TYPES):
-        weather = 'fog'
+    #if any(wt_active(d, wt) for wt in FOG_TYPES):
+    #    weather = 'fog'
     if any(wt_active(d, wt) for wt in DRIZZLE_TYPES):
         weather = 'drizzle'
     if any(wt_active(d, wt) for wt in RAIN_TYPES) or safe_float(d.get('PRCP')) > 0:
