@@ -1,153 +1,273 @@
-%% main_demo.m  —  Pipeline completo: carregamento → treino → previsão → avaliação
+%% main_demo.m — Full pipeline: load → bloom → train → minhash → ensemble predict → evaluate
 %
-% Features base (sempre presentes no CSV):
-%   precipitation  — precipitação (mm)
-%   temp_max       — temperatura máxima (°C)
-%   temp_min       — temperatura mínima (°C)
-%   wind           — velocidade média do vento (m/s)
-%   snow_depth     — profundidade de neve acumulada (mm)
-%   temp_range     — amplitude térmica (TMAX − TMIN)
-%   month_sin      — componente seno do mês (codificação cíclica)
-%   month_cos      — componente coseno do mês (codificação cíclica)
+% Expected project structure:
+%   weather_project/
+%   ├── data/weather_data.csv
+%   ├── naive_bayes/      nb_train.m  nb_predict.m
+%   ├── bloom_filter/     bloom_init.m  bloom_insert.m  bloom_check.m
+%   │                     bloom_hash.m  bloom_fp_rate.m
+%   ├── minhash/          minhash_signature.m  minhash_neighbours.m
+%   │                     minhash_similarity.m  discretizar_dia.m
+%   ├── main_demo.m
+%   └── evaluate.m
 %
-% Features opcionais (presentes apenas em estações NOAA que as reportam):
-%   tsun           — total de horas de sol do dia (minutos)
-%   wsf2           — velocidade máxima de rajada em 2 minutos (m/s)
+% Each module contributes to the final prediction:
+%   Bloom Filter  → flags unseen patterns (gates the pipeline)
+%   MinHash       → finds the k most similar historical days
+%   Naive Bayes   → computes class probabilities from learned distributions
+%   Ensemble      → final class = α·P_NB + (1-α)·WeightedMinHashVote
 
-%% 0) Definir pasta base e adicionar pastas ao path do MATLAB
+clear; clc; close all;
+
+%% -------------------------------------------------------
+%  0. PATHS
+% -------------------------------------------------------
 baseDir = fileparts(mfilename('fullpath'));
 addpath(fullfile(baseDir, 'naive_bayes'));
 addpath(fullfile(baseDir, 'bloom_filter'));
 addpath(fullfile(baseDir, 'minhash'));
 
-%% 1) Carregar e preparar os dados
-fprintf('=== A carregar dados ===\n');
-dados = readtable(fullfile(baseDir, 'data', 'seattle.csv'));
+%% -------------------------------------------------------
+%  1. LOAD DATA
+% -------------------------------------------------------
+fprintf('=== Loading data ===\n');
+data = readtable(fullfile(baseDir, 'data', 'los_angeles.csv'));
 
-variaveis = dados.Properties.VariableNames;
+featureNames = {'precipitation','temp_max','temp_min','wind', ...
+                'snow_depth','temp_range','month_sin','month_cos','tsun','wsf2'};
 
-colunasBase = {'precipitation', 'temp_max', 'temp_min', 'wind', ...
-               'snow_depth', 'temp_range', 'month_sin', 'month_cos'};
-if ~all(ismember(colunasBase, variaveis))
-    error('CSV sem colunas base. Regenera com o weather.py actualizado.');
-end
-
-nomeFeatures = colunasBase;
-if ismember('tsun', variaveis)
-    nomeFeatures{end+1} = 'tsun';
-    fprintf('  Coluna TSUN detectada — incluída nas features.\n');
-end
-if ismember('wsf2', variaveis)
-    nomeFeatures{end+1} = 'wsf2';
-    fprintf('  Coluna WSF2 detectada — incluída nas features.\n');
-end
-
-fprintf('  A usar %d features: %s\n\n', numel(nomeFeatures), strjoin(nomeFeatures, ', '));
-
-X = table2array(dados(:, nomeFeatures));
-Y = categorical(dados.weather);
-
+X = table2array(data(:, featureNames));
+Y = categorical(data.weather);
 classes   = categories(Y);
-nFeatures = size(X, 2);
+nFeatures = numel(featureNames);
 N         = size(X, 1);
 
-fprintf('Dataset: %d amostras | %d features | %d classes\n', N, nFeatures, numel(classes));
+fprintf('Dataset: %d samples | %d features | %d classes\n', N, nFeatures, numel(classes));
 fprintf('Classes: %s\n\n', strjoin(classes', ', '));
 
-%% 2) Divisão treino / teste  (80 / 20)
+%% -------------------------------------------------------
+%  2. TRAIN / TEST SPLIT  (80 / 20)
+% -------------------------------------------------------
 rng(42);
-idx               = randperm(N);
-percentagemTreino = 0.8;
-nTreino           = round(percentagemTreino * N);
+idx    = randperm(N);
+nTrain = round(0.8 * N);
 
-idxTreino = idx(1:nTreino);
-idxTeste  = idx(nTreino+1:end);
+idxTrain = idx(1:nTrain);
+idxTest  = idx(nTrain+1:end);
 
-XTreino = X(idxTreino, :);
-YTreino = Y(idxTreino);
-XTeste  = X(idxTeste,  :);
-YTeste  = Y(idxTeste);
+XTrain = X(idxTrain, :);  YTrain = Y(idxTrain);
+XTest  = X(idxTest,  :);  YTest  = Y(idxTest);
 
-fprintf('Treino: %d amostras | Teste: %d amostras\n\n', nTreino, numel(idxTeste));
+fprintf('Train: %d samples | Test: %d samples\n\n', nTrain, numel(idxTest));
 
-%% 3) Bloom Filter
-fprintf('=== A construir Bloom Filter ===\n');
+%% -------------------------------------------------------
+%  3. BLOOM FILTER — built on training data
+%     Role: before predicting, flag whether a test day's
+%     pattern was ever seen during training.
+%     Unseen patterns → prediction should be treated with
+%     lower confidence.
+% -------------------------------------------------------
+fprintf('=== Building Bloom Filter ===\n');
 
-fpr_alvo = 0.01;
-m_bf     = ceil(-(nTreino * log(fpr_alvo)) / (log(2)^2));
-k_bf     = max(1, round((m_bf / nTreino) * log(2)));
+fpr_target = 0.01;
+m_bf = ceil(-(nTrain * log(fpr_target)) / (log(2)^2));
+k_bf = max(1, round((m_bf / nTrain) * log(2)));
 
 bf = bloom_init(m_bf, k_bf);
-for i = 1:nTreino
-    bf = bloom_insert(bf, mat2str(XTreino(i,:), 4));
+for i = 1:nTrain
+    bf = bloom_insert(bf, mat2str(XTrain(i,:), 4));
 end
 
-fprintf('  m = %d bits | k = %d hashes | FPR teórica = %.4f%%\n\n', ...
+fprintf('  m = %d bits | k = %d hashes | theoretical FPR = %.4f%%\n\n', ...
     m_bf, k_bf, bloom_fp_rate(bf) * 100);
 
-%% 4) Treino Naive-Bayes
-fprintf('=== A treinar Naive Bayes Gaussiano ===\n');
-[mu, sigma, logPrior, classes] = nb_train(XTreino, YTreino);
+%% -------------------------------------------------------
+%  4. NAIVE BAYES — train on XTrain
+% -------------------------------------------------------
+fprintf('=== Training Gaussian Naive Bayes ===\n');
+[mu, sigma, logPrior, classes] = nb_train(XTrain, YTrain);
 
-fprintf('\n%-12s  %8s\n', 'Classe', 'Prior');
+fprintf('\n%-12s  %8s\n', 'Class', 'Prior');
 fprintf('%s\n', repmat('-', 1, 22));
 for c = 1:numel(classes)
-    fprintf('%-12s  %8.3f\n', classes{c}, exp(logPrior(c)));
+    fprintf('  %-12s  %.4f\n', classes{c}, exp(logPrior(c)));
 end
 fprintf('\n');
 
-%% 5) Previsão
-fprintf('=== A classificar conjunto de teste ===\n');
-[previsoes, probas] = nb_predict(XTeste, mu, sigma, logPrior, classes);
+%% -------------------------------------------------------
+%  5. MINHASH — build signatures on training sets
+%     Role: given a test day, find the k most similar
+%     training days and use their labels as weighted votes.
+% -------------------------------------------------------
+fprintf('=== Building MinHash signatures ===\n');
 
-%% 6) Avaliação
-fprintf('\n=== Avaliação ===\n');
-evaluate(YTeste, previsoes, classes, XTeste, bf);
+nHash = 100;   % signature length — higher = more accurate Jaccard estimate
 
-%% 7) Exemplo de previsão para um novo ponto
-fprintf('\n=== Exemplo de previsão manual ===\n');
-
-mes       = 1;
-novoPonto = [5.0, 14.0, 8.0, 3.5, 0.0, 6.0, sin(2*pi*mes/12), cos(2*pi*mes/12)];
-if ismember('tsun', nomeFeatures), novoPonto(end+1) = 0.0; end
-if ismember('wsf2', nomeFeatures), novoPonto(end+1) = 5.0; end
-
-fprintf('Entrada (mês = Janeiro):\n');
-for j = 1:nFeatures
-    fprintf('  %-14s = %.4f\n', nomeFeatures{j}, novoPonto(j));
-end
-fprintf('\n');
-
-chaveNovo = mat2str(novoPonto, 4);
-if bloom_check(bf, chaveNovo)
-    fprintf('Bloom Filter: padrão provavelmente visto no treino.\n');
-else
-    fprintf('Bloom Filter: padrão NOVO — não está no histórico de treino.\n');
+% Discretise every training day into a set of tokens
+trainSets = cell(nTrain, 1);
+for i = 1:nTrain
+    trainSets{i} = discretizar_dia(XTrain(i,:));
 end
 
-[prevNovo, probNovo] = nb_predict(novoPonto, mu, sigma, logPrior, classes);
-fprintf('\nProbabilidades por classe:\n');
-for c = 1:numel(classes)
-    fprintf('  %-12s  %.4f\n', classes{c}, probNovo(c));
-end
-fprintf('\nPrevisão final: %s\n', char(prevNovo));
+% Compute (nHash x nTrain) signature matrix
+sigTrain = minhash_signature(trainSets, nHash);
 
-%% 8) Efeito do mês na previsão (mesmo perfil físico)
-fprintf('\n=== Efeito do mês na previsão (mesmo perfil físico) ===\n');
-fprintf('Perfil base: prcp=2.0 tmax=18.0 tmin=10.0 wind=2.5 snow=0 trange=8.0\n\n');
-fprintf('%-6s  %-12s  %s\n', 'Mês', 'Previsão', 'Probabilidades');
-fprintf('%s\n', repmat('-', 1, 70));
+fprintf('  nHash = %d | Training signature matrix: %dx%d\n\n', ...
+    nHash, size(sigTrain,1), size(sigTrain,2));
 
-mesesNomes = {'Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'};
-for mes = 1:12
-    ponto = [2.0, 18.0, 10.0, 2.5, 0.0, 8.0, sin(2*pi*mes/12), cos(2*pi*mes/12)];
-    if ismember('tsun', nomeFeatures), ponto(end+1) = 200.0; end 
-    if ismember('wsf2', nomeFeatures), ponto(end+1) = 4.0;   end
+%% -------------------------------------------------------
+%  6. ENSEMBLE PREDICTION ON TEST SET
+%     For each test day:
+%       a) Bloom Filter  → seen / unseen flag
+%       b) Naive Bayes   → class probabilities  (probNB)
+%       c) MinHash       → k nearest neighbours → weighted vote (votesMH)
+%       d) Ensemble      → score = α·probNB + (1-α)·votesMH
+% -------------------------------------------------------
+fprintf('=== Ensemble prediction on test set ===\n');
 
-    [prev, prob] = nb_predict(ponto, mu, sigma, logPrior, classes);
-    probStr = '';
-    for c = 1:numel(classes)
-        probStr = [probStr sprintf('%s=%.2f  ', classes{c}, prob(c))];
+alpha   = 0.7;   % NB weight;  MinHash weight = 1-alpha
+kNN     = 5;     % number of MinHash neighbours
+nTest   = size(XTest, 1);
+nClasses = numel(classes);
+
+predictions  = categorical(repmat("", nTest, 1));
+ensembleProb = zeros(nTest, nClasses);
+nbProb       = zeros(nTest, nClasses);
+bloomFlags   = false(nTest, 1);   % true = pattern seen in training
+
+for i = 1:nTest
+
+    % ---- a) Bloom Filter check ----
+    key = mat2str(XTest(i,:), 4);
+    bloomFlags(i) = bloom_check(bf, key);
+
+    % ---- b) Naive Bayes probabilities ----
+    [~, probNB] = nb_predict(XTest(i,:), mu, sigma, logPrior, classes);
+    probNB = probNB(:);
+    nbProb(i,:) = probNB';
+
+    % ---- c) MinHash: k nearest neighbours ----
+    querySet = discretizar_dia(XTest(i,:));
+    sigQuery = minhash_signature({querySet}, nHash);   %#ok<NBRAK>
+
+    [neighboursIdx, neighboursSim] = minhash_neighbours(sigTrain, sigQuery, kNN);
+
+    % Weighted vote: each neighbour votes for its class, weighted by similarity
+    votesMH   = zeros(nClasses, 1);
+    totalSim  = sum(neighboursSim);
+
+    if totalSim > 0
+        for v = 1:numel(neighboursIdx)
+            neighbourClass = char(YTrain(neighboursIdx(v)));
+            cIdx = find(strcmp(classes, neighbourClass));
+            if ~isempty(cIdx)
+                votesMH(cIdx) = votesMH(cIdx) + neighboursSim(v);
+            end
+        end
+        votesMH = votesMH / totalSim;   % normalise to [0,1]
+    else
+        % No useful similarity → fall back entirely to Naive Bayes
+        votesMH = probNB;
     end
-    fprintf('%-6s  %-12s  %s\n', mesesNomes{mes}, char(prev), probStr);
+
+    % ---- d) Ensemble score ----
+    % If Bloom Filter says "unseen", reduce NB confidence slightly
+    effectiveAlpha = alpha;
+    if ~bloomFlags(i)
+        effectiveAlpha = min(alpha + 0.1, 1.0);   % trust NB more for novel patterns
+    end
+
+    score = effectiveAlpha * probNB + (1 - effectiveAlpha) * votesMH;
+    score = score / sum(score);   % normalise
+
+    ensembleProb(i,:) = score';
+    [~, best] = max(score);
+    predictions(i) = classes{best};
 end
+
+nSeen   = sum(bloomFlags);
+nUnseen = nTest - nSeen;
+fprintf('  Bloom Filter: %d seen | %d unseen (novel patterns)\n', nSeen, nUnseen);
+fprintf('  Ensemble alpha = %.2f (NB) + %.2f (MinHash)\n\n', alpha, 1-alpha);
+
+%% -------------------------------------------------------
+%  7. EVALUATE
+% -------------------------------------------------------
+fprintf('=== Evaluation ===\n');
+evaluate(YTest, predictions, classes, XTest, bf);
+
+%% -------------------------------------------------------
+%  8. MANUAL PREDICTION EXAMPLE
+%     Shows all three components contributing visibly.
+% -------------------------------------------------------
+fprintf('\n=== Manual prediction example ===\n');
+
+% [precipitation, temp_max, temp_min, wind, snow_depth,
+%  temp_range, month_sin, month_cos, tsun, wsf2]
+newDay = [5.0, 12.0, 6.0, 4.5, 0.0, 6.0, 0.5, 0.866, 0.0, 9.0];
+
+fprintf('Input: ');
+for j = 1:nFeatures
+    fprintf('%s=%.1f  ', featureNames{j}, newDay(j));
+end
+fprintf('\n\n');
+
+% Bloom Filter
+key = mat2str(newDay, 4);
+if bloom_check(bf, key)
+    fprintf('[Bloom Filter]  Pattern probably seen in training.\n');
+else
+    fprintf('[Bloom Filter]  NOVEL pattern — not in training history.\n');
+end
+
+% Naive Bayes
+[~, probNB] = nb_predict(newDay, mu, sigma, logPrior, classes);
+probNB = probNB(:);
+fprintf('\n[Naive Bayes] Class probabilities:\n');
+for c = 1:numel(classes)
+    fprintf('  %-12s  %.4f\n', classes{c}, probNB(c));
+end
+
+% MinHash neighbours
+querySet = discretizar_dia(newDay);
+sigQuery = minhash_signature({querySet}, nHash);
+[neighboursIdx, neighboursSim] = minhash_neighbours(sigTrain, sigQuery, kNN);
+
+fprintf('\n[MinHash] %d nearest neighbours:\n', kNN);
+for v = 1:numel(neighboursIdx)
+    fprintf('  Neighbour %d — similarity=%.4f — class=%s\n', ...
+        v, neighboursSim(v), char(YTrain(neighboursIdx(v))));
+end
+
+% MinHash weighted vote
+votesMH  = zeros(nClasses, 1);
+totalSim = sum(neighboursSim);
+if totalSim > 0
+    for v = 1:numel(neighboursIdx)
+        cIdx = find(strcmp(classes, char(YTrain(neighboursIdx(v)))));
+        if ~isempty(cIdx)
+            votesMH(cIdx) = votesMH(cIdx) + neighboursSim(v);
+        end
+    end
+    votesMH = votesMH / totalSim;
+else
+    votesMH = probNB;
+end
+
+fprintf('\n[MinHash] Weighted votes:\n');
+for c = 1:numel(classes)
+    fprintf('  %-12s  %.4f\n', classes{c}, votesMH(c));
+end
+
+% Ensemble
+score = alpha * probNB + (1-alpha) * votesMH;
+score = score / sum(score);
+[~, best] = max(score);
+
+fprintf('\n[Ensemble]  alpha=%.2f·NB + %.2f·MinHash\n', alpha, 1-alpha);
+for c = 1:numel(classes)
+    marker = '';
+    if c == best, marker = '  ← prediction'; end
+    fprintf('  %-12s  %.4f%s\n', classes{c}, score(c), marker);
+end
+fprintf('\nFinal prediction: %s\n', classes{best});
