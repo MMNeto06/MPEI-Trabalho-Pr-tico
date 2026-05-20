@@ -1,3 +1,3 @@
-function sim = minhash_similarity(sig, i, j)
-    sim = mean(sig(:, i) == sig(:, j));
+function sim = minhash_similarity(sig1, sig2)
+    sim = mean(sig1(:) == sig2(:));
 end

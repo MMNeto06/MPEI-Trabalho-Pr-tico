@@ -1,31 +1,57 @@
-function sig = minhash_signature(conjuntos, nHash)
-    N           = numel(conjuntos);
-    universo    = unique([conjuntos{:}]);    % todos os tokens únicos
-    U           = numel(universo);           % tamanho do universo
+function [sig, hashData] = minhash_signature(conjuntos, nHashOrData)
+    N = numel(conjuntos);
 
-    % Gerar parâmetros aleatórios para nHash funções hash universais
-    % h_i(x) = (a_i * x + b_i) mod p  — família universal de hashes
-    p = 2147483647;   % primo de Mersenne: 2^31 - 1
-    a  = randi(p-1, nHash, 1);              % a ∈ [1, p-1]
-    b  = randi(p,   nHash, 1);              % b ∈ [1, p]
+    if isnumeric(nHashOrData)
+        nHash = nHashOrData;
+        universo = unique([conjuntos{:}]);
+        U = numel(universo);
+        p = nextprime(max(U * 100, 100003));
+        a = randi(max(p-1,1), nHash, 1);
+        b = randi(p, nHash, 1);
+        tokenIdx = containers.Map(universo, 1:U);
+        hashData.a = a;
+        hashData.b = b;
+        hashData.p = p;
+        hashData.tokenIdx = tokenIdx;
+    else
+        hashData = nHashOrData;
+        a = hashData.a;
+        b = hashData.b;
+        p = hashData.p;
+        tokenIdx = hashData.tokenIdx;
+        nHash = length(a);
+    end
 
-    % Mapear cada token do universo para um índice numérico
-    tokenIdx = containers.Map(universo, 1:U);
-
-    % Inicializar assinaturas com +inf
     sig = inf(nHash, N);
-
-    % Para cada dia, calcular o mínimo hash para cada função
     for j = 1:N
         tokens = conjuntos{j};
-        if isempty(tokens), continue; end
+        if isempty(tokens)
+            continue; 
+        end
 
-        % Índices numéricos dos tokens deste dia
-        indices = cellfun(@(t) tokenIdx(t), tokens);
+        validTokens = tokens(isKey(tokenIdx, tokens));
+        if isempty(validTokens)
+            continue;
+        end
 
-        % Para cada função hash, calcular h(x) para todos os tokens e guardar o mínimo
-        % h_i(x) = mod(a_i * x + b_i, p)   [operação vectorizada]
-        hashes = mod(a * indices + b, p);   % (nHash × |tokens|)
-        sig(:, j) = min(hashes, [], 2);     % mínimo por linha
+        indices = cellfun(@(t) tokenIdx(t), validTokens);
+        hashes = mod(a * indices + b, p) + 1;
+        sig(:,j) = min(hashes, [], 2);
+    end
+end
+
+function p = nextprime(n)
+    p = n;
+    if p < 2
+        p = 2;
+        return;
+    end
+
+    if mod(p,2)==0
+        p = p + 1;
+    end
+
+    while ~isprime(p)
+        p = p + 2;
     end
 end

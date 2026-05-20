@@ -17,7 +17,8 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf)
     fprintf('=== Bloom Filter: Dias de Teste vs Histórico ===\n');
     nNaoVisto = 0;
     for i = 1:nTeste
-        chave = mat2str(XTeste(i, :), 4);      % converte linha para string
+        tokens = extract_features(XTeste(i, :));   % mesmo método que no insert
+        chave = lower(strjoin(sort(string(tokens)), '|'));      % mesmo formato que no insert
         if ~bloom_check(bf, chave)
             nNaoVisto = nNaoVisto + 1;
         end
