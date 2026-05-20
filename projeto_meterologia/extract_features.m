@@ -1,21 +1,39 @@
 function tokens = extract_features(x)
+%EXTRACT_FEATURES  Discretiza um vetor de features numéricas em tokens textuais.
+%
+%   Mapeamento das colunas de X (após pré-processamento em main_demo.m):
+%     x( 1) precipitation        x( 2) temp_max
+%     x( 3) temp_min             x( 4) sunshine_duration  (horas)
+%     x( 5) shortwave_radiation  x( 6) wind_speed_max
+%     x( 7) wind_gusts_max       x( 8) snowfall           (mm)
+%     x( 9) temp_range           x(10) month_sin
+%     x(11) month_cos            x(12) humidity_mean      (%)
+%     x(13) humidity_min         x(14) cloud_cover_mean   (%)
+%     x(15) pressure_mean        x(16) pressure_min       (hPa)
+%     x(17) precipitation_hours  x(18..20) compostas — ignoradas aqui
 
     tokens = {};
 
     % =========================
-    % FEATURES BASE
+    % LEITURA DAS FEATURES BASE
     % =========================
-    p  = x(1);   % precipitation
-    tM = x(2);   % temp max
-    tN = x(3);   % temp min
-    w  = x(4);   % wind
-    s  = x(5);   % snow depth
-    ms = x(6);   % month sin
-    mc = x(7);   % month cos
-    ts = x(8);   % sunshine hours
-    gs = x(9);   % gust
-
-    deltaT = tM - tN;
+    p   = x(1);    % precipitation (mm)
+    tM  = x(2);    % temp_max (°C)
+    tN  = x(3);    % temp_min (°C)
+    ts  = x(4);    % sunshine_duration (horas)
+    sr  = x(5);    % shortwave_radiation (W/m²)
+    w   = x(6);    % wind_speed_max (m/s)
+    gs  = x(7);    % wind_gusts_max (m/s)
+    s   = x(8);    % snowfall (mm)
+    deltaT = x(9); % temp_range = temp_max - temp_min (pré-calculado)
+    ms  = x(10);   % month_sin
+    mc  = x(11);   % month_cos
+    hm  = x(12);   % humidity_mean (%)
+    hmin = x(13);  % humidity_min (%)
+    cc  = x(14);   % cloud_cover_mean (%)
+    pm  = x(15);   % pressure_mean (hPa)
+    pmin = x(16);  % pressure_min (hPa)
+    ph  = x(17);   % precipitation_hours
 
     % =========================================================
     % BLOCO 1 — PRECIPITAÇÃO (granularidade alta)
@@ -83,7 +101,7 @@ function tokens = extract_features(x)
     end
 
     % =========================================================
-    % BLOCO 4 — AMPLITUDE TÉRMICA (discrimina sun vs drizzle)
+    % BLOCO 4 — AMPLITUDE TÉRMICA
     % deltaT alto + p=0 → sol. deltaT baixo + p>0 → drizzle/chuva.
     % =========================================================
     if deltaT < 3
@@ -131,18 +149,18 @@ function tokens = extract_features(x)
     end
 
     % =========================================================
-    % BLOCO 7 — NEVE (profundidade)
+    % BLOCO 7 — NEVE (snowfall em mm)
     % =========================================================
     if s == 0
         tokens{end+1} = 'snow_absent';
-    elseif s < 2
+    elseif s < 0.5
         tokens{end+1} = 'snow_trace';
-    elseif s < 5
+    elseif s < 2
         tokens{end+1} = 'snow_light';
-    elseif s < 15
+    elseif s < 5
         tokens{end+1} = 'snow_moderate';
     else
-        tokens{end+1} = 'snow_deep';
+        tokens{end+1} = 'snow_heavy';
     end
 
     % =========================================================
@@ -152,16 +170,18 @@ function tokens = extract_features(x)
         tokens{end+1} = 'sun_zero';
     elseif ts < 1
         tokens{end+1} = 'sun_trace';
-    elseif ts < 2
+    elseif ts < 3
         tokens{end+1} = 'sun_very_low';
-    elseif ts < 3.5
-        tokens{end+1} = 'sun_low';
     elseif ts < 5
+        tokens{end+1} = 'sun_low';
+    elseif ts < 8
         tokens{end+1} = 'sun_moderate';
-    elseif ts < 7
+    elseif ts < 11
         tokens{end+1} = 'sun_high';
-    else
+    elseif ts < 14
         tokens{end+1} = 'sun_very_high';
+    else
+        tokens{end+1} = 'sun_full_day';
     end
 
     % =========================================================
@@ -191,48 +211,99 @@ function tokens = extract_features(x)
 
     % =========================================================
     % BLOCO 10 — RÁCIO PRECIPITAÇÃO/SOL
-    % Este é o token mais discriminativo para drizzle vs sun.
-    % Drizzle: p pequeno, ts pequeno → rácio ~1
-    % Sun: p=0, ts alto → rácio ~0
-    % Rain: p alto, ts=0 → rácio muito alto
     % =========================================================
-    psr = p / (ts + 0.5);   % evita divisão por zero
-
+    psr = p / (ts + 0.5);
     if psr == 0
-        tokens{end+1} = 'psr_zero';           % sol claro sem chuva
+        tokens{end+1} = 'psr_zero';
     elseif psr < 0.1
-        tokens{end+1} = 'psr_very_low';       % sol com trace de chuva
+        tokens{end+1} = 'psr_very_low';
     elseif psr < 0.5
-        tokens{end+1} = 'psr_low';            % maioritariamente seco
+        tokens{end+1} = 'psr_low';
     elseif psr < 1.5
-        tokens{end+1} = 'psr_moderate';       % misto — zona de drizzle
+        tokens{end+1} = 'psr_moderate';
     elseif psr < 4
-        tokens{end+1} = 'psr_high';           % chuva moderada
+        tokens{end+1} = 'psr_high';
     else
-        tokens{end+1} = 'psr_very_high';      % chuva intensa, sem sol
+        tokens{end+1} = 'psr_very_high';
     end
 
     % =========================================================
-    % BLOCO 11 — ÍNDICE DE NEBULOSIDADE ESTIMADO
-    % Proxy: combina falta de sol e presença de chuva
+    % BLOCO 11 — COBERTURA DE NUVENS (cloud_cover_mean, %)
     % =========================================================
-    cloud_idx = (p * 1.5 + max(8 - ts, 0)) / 10;
-
-    if cloud_idx < 0.3
+    if cc < 10
         tokens{end+1} = 'cloud_clear';
-    elseif cloud_idx < 0.6
+    elseif cc < 30
+        tokens{end+1} = 'cloud_mostly_clear';
+    elseif cc < 50
         tokens{end+1} = 'cloud_partly';
-    elseif cloud_idx < 1.0
-        tokens{end+1} = 'cloud_mostly';
+    elseif cc < 75
+        tokens{end+1} = 'cloud_mostly_cloudy';
     else
         tokens{end+1} = 'cloud_overcast';
     end
 
     % =========================================================
-    % BLOCO 12 — PADRÕES COMPOSTOS DRIZZLE
-    % Drizzle: precipitação fraca + pouco sol + temperatura amena
-    % A ausência de padrões fortes de rain/sun é tão importante
-    % quanto a presença de precipitação fraca.
+    % BLOCO 12 — HUMIDADE RELATIVA (%)
+    % =========================================================
+    if hm < 50
+        tokens{end+1} = 'hum_low';
+    elseif hm < 65
+        tokens{end+1} = 'hum_moderate';
+    elseif hm < 78
+        tokens{end+1} = 'hum_high';
+    elseif hm < 90
+        tokens{end+1} = 'hum_very_high';
+    else
+        tokens{end+1} = 'hum_saturated';
+    end
+
+    % =========================================================
+    % BLOCO 13 — PRESSÃO ATMOSFÉRICA (hPa)
+    % =========================================================
+    if pm < 1005
+        tokens{end+1} = 'pressure_very_low';
+    elseif pm < 1010
+        tokens{end+1} = 'pressure_low';
+    elseif pm < 1017
+        tokens{end+1} = 'pressure_normal';
+    elseif pm < 1025
+        tokens{end+1} = 'pressure_high';
+    else
+        tokens{end+1} = 'pressure_very_high';
+    end
+
+    % =========================================================
+    % BLOCO 14 — HORAS DE PRECIPITAÇÃO
+    % =========================================================
+    if ph == 0
+        tokens{end+1} = 'phours_none';
+    elseif ph < 3
+        tokens{end+1} = 'phours_brief';
+    elseif ph < 8
+        tokens{end+1} = 'phours_moderate';
+    elseif ph < 16
+        tokens{end+1} = 'phours_long';
+    else
+        tokens{end+1} = 'phours_all_day';
+    end
+
+    % =========================================================
+    % BLOCO 15 — RADIAÇÃO DE ONDA CURTA (W/m²)
+    % =========================================================
+    if sr < 30
+        tokens{end+1} = 'rad_very_low';
+    elseif sr < 80
+        tokens{end+1} = 'rad_low';
+    elseif sr < 150
+        tokens{end+1} = 'rad_moderate';
+    elseif sr < 220
+        tokens{end+1} = 'rad_high';
+    else
+        tokens{end+1} = 'rad_very_high';
+    end
+
+    % =========================================================
+    % BLOCO 16 — PADRÕES COMPOSTOS DRIZZLE
     % =========================================================
     if p > 0 && p < 2 && ts < 3
         tokens{end+1} = 'drizzle_core';
@@ -249,45 +320,49 @@ function tokens = extract_features(x)
     if p > 0 && p < 2 && ts < 4 && gs < 10
         tokens{end+1} = 'drizzle_calm_wet';
     end
-    % Drizzle invernal (frio + pouca chuva + sem sol)
     if p > 0 && p < 1.5 && tM < 10 && ts < 2
         tokens{end+1} = 'drizzle_winter_grey';
     end
+    if p > 0 && p < 2 && hm > 80 && cc > 70
+        tokens{end+1} = 'drizzle_humid_overcast';
+    end
+    if ph > 0 && ph < 6 && p < 2
+        tokens{end+1} = 'drizzle_brief_hours';
+    end
 
     % =========================================================
-    % BLOCO 13 — PADRÕES COMPOSTOS SUN
-    % Distinção chave: p=0 é condição necessária mas não suficiente.
-    % Sun real tem ts alto + tM razoável.
+    % BLOCO 17 — PADRÕES COMPOSTOS SUN
     % =========================================================
-    if p == 0 && ts > 4
+    if p == 0 && ts > 6
         tokens{end+1} = 'sun_core';
     end
-    if p == 0 && ts > 5 && tM > 12
+    if p == 0 && ts > 8 && tM > 12
         tokens{end+1} = 'sun_classic';
     end
-    if p == 0 && ts > 6 && w < 5
+    if p == 0 && ts > 9 && w < 5
         tokens{end+1} = 'sun_calm_clear';
     end
     if p == 0 && deltaT > 10
-        tokens{end+1} = 'sun_dry_day';           % amplitude alta → sem nuvens
+        tokens{end+1} = 'sun_dry_day';
     end
-    if p == 0 && ts > 3 && tM > 15 && tN > 5
+    if p == 0 && ts > 5 && tM > 15 && tN > 5
         tokens{end+1} = 'sun_warm_day';
     end
-    if p == 0 && ts > 5 && deltaT > 8
+    if p == 0 && ts > 8 && deltaT > 8
         tokens{end+1} = 'sun_definite';
     end
-    % Sol de inverno (frio mas sem chuva e com algum sol)
-    if p == 0 && tM < 10 && ts > 2
+    if p == 0 && tM < 10 && ts > 3
         tokens{end+1} = 'sun_winter_clear';
     end
-    % Dia seco com vento (Seattle tem isto no verão)
-    if p == 0 && w > 5 && ts > 3
+    if p == 0 && w > 5 && ts > 4
         tokens{end+1} = 'sun_breezy';
+    end
+    if p == 0 && cc < 20 && ts > 8
+        tokens{end+1} = 'sun_low_cloud';
     end
 
     % =========================================================
-    % BLOCO 14 — PADRÕES COMPOSTOS RAIN
+    % BLOCO 18 — PADRÕES COMPOSTOS RAIN
     % =========================================================
     if p >= 5
         tokens{end+1} = 'rain_core';
@@ -305,14 +380,20 @@ function tokens = extract_features(x)
         tokens{end+1} = 'rain_steady';
     end
     if p > 3 && tM > 15
-        tokens{end+1} = 'rain_warm';              % chuva de verão
+        tokens{end+1} = 'rain_warm';
     end
     if p > 1 && tM < 8 && tN < 3
-        tokens{end+1} = 'rain_cold';              % chuva de inverno
+        tokens{end+1} = 'rain_cold';
+    end
+    if ph > 10 && p > 2
+        tokens{end+1} = 'rain_long_duration';
+    end
+    if p > 3 && pm < 1010
+        tokens{end+1} = 'rain_low_pressure';
     end
 
     % =========================================================
-    % BLOCO 15 — PADRÕES COMPOSTOS SNOW
+    % BLOCO 19 — PADRÕES COMPOSTOS SNOW
     % =========================================================
     if tM < 2 || s > 0 || tN < -1
         tokens{end+1} = 'snow_conditions';
@@ -324,40 +405,89 @@ function tokens = extract_features(x)
         tokens{end+1} = 'snow_persistent';
     end
     if tM < 0 && ts > 3
-        tokens{end+1} = 'snow_bright_cold';       % neve com sol
+        tokens{end+1} = 'snow_bright_cold';
     end
     if tN < -3 && p > 0 && ts < 2
         tokens{end+1} = 'snow_blizzard_like';
     end
     if s > 0 && p == 0 && ts > 2
-        tokens{end+1} = 'snow_melting_sun';       % neve a derreter
+        tokens{end+1} = 'snow_melting_sun';
     end
     if tM < 2 && tN < -2 && s == 0
-        tokens{end+1} = 'snow_dry_freeze';        % gelado sem neve
+        tokens{end+1} = 'snow_dry_freeze';
+    end
+    if s > 2 && w > 5
+        tokens{end+1} = 'snow_wind_driven';
     end
 
     % =========================================================
-    % BLOCO 16 — HÍBRIDOS DISCRIMINATIVOS
-    % Capturam as fronteiras difusas entre classes
+    % BLOCO 20 — PADRÕES COMPOSTOS FOG
     % =========================================================
+    if hm > 88 && ts < 3 && p < 1
+        tokens{end+1} = 'fog_core';
+    end
+    if hm > 90 && cc > 80 && p == 0
+        tokens{end+1} = 'fog_dry_saturated';
+    end
+    if hm > 85 && ts == 0 && p == 0
+        tokens{end+1} = 'fog_zero_sun_dry';
+    end
+    if hm > 85 && deltaT < 4 && ts < 2
+        tokens{end+1} = 'fog_low_dT';
+    end
+    if hm > 80 && cc > 85 && p < 0.5 && w < 4
+        tokens{end+1} = 'fog_calm_humid';
+    end
+    if hm > 88 && tM > 5 && tM < 18 && p < 0.5
+        tokens{end+1} = 'fog_mild_saturated';
+    end
+    if hm > 90 && ph == 0
+        tokens{end+1} = 'fog_no_precip_saturated';
+    end
+    if hmin > 80 && deltaT > 6 && p == 0
+        tokens{end+1} = 'fog_radiation_type';
+    end
 
-    % Zona ambígua drizzle/sun (o caso problemático)
+    % =========================================================
+    % BLOCO 21 — PADRÕES COMPOSTOS THUNDER
+    % =========================================================
+    if p > 5 && gs > 15
+        tokens{end+1} = 'thunder_core';
+    end
+    if p > 3 && gs > 12 && tM > 15
+        tokens{end+1} = 'thunder_warm_gusty';
+    end
+    if p > 8 && gs > 18
+        tokens{end+1} = 'thunder_heavy';
+    end
+    if p > 2 && gs > 10 && pm < 1010
+        tokens{end+1} = 'thunder_low_pressure';
+    end
+    if gs > 15 && pmin < 1005
+        tokens{end+1} = 'thunder_pressure_drop';
+    end
+    if p > 5 && tM > 18 && gs > 10
+        tokens{end+1} = 'thunder_summer_storm';
+    end
+
+    % =========================================================
+    % BLOCO 22 — HÍBRIDOS DISCRIMINATIVOS
+    % =========================================================
     if p < 1 && ts < 4 && tM > 6 && tM < 16
         tokens{end+1} = 'ambiguous_grey_mild';
     end
     if p == 0 && ts < 3 && tM > 8
-        tokens{end+1} = 'dry_but_overcast';       % sem chuva mas nublado
+        tokens{end+1} = 'dry_but_overcast';
     end
-
-    % Dias húmidos escuros (rain vs drizzle)
     if p > 0 && ts == 0
         tokens{end+1} = 'wet_dark';
     end
     if p > 0 && ts < 1
         tokens{end+1} = 'wet_nearly_dark';
     end
-
-    % Temperatura + precipitação
+    if ts == 0 && hm > 85 && p < 1
+        tokens{end+1} = 'dark_humid_dry';
+    end
     if tN < 3 && p > 0
         tokens{end+1} = 'cold_wet';
     end
@@ -370,8 +500,6 @@ function tokens = extract_features(x)
     if p == 0 && tM > 20
         tokens{end+1} = 'hot_dry';
     end
-
-    % Vento + condições
     if p == 0 && w > 7
         tokens{end+1} = 'dry_windy';
     end
@@ -380,45 +508,41 @@ function tokens = extract_features(x)
     end
 
     % =========================================================
-    % BLOCO 17 — INTERAÇÕES TRIPLAS
-    % Combinações de três features para máxima especificidade
+    % BLOCO 23 — INTERAÇÕES TRIPLAR
     % =========================================================
-
-    % Sol claro de verão
-    if p == 0 && ts > 6 && tM > 20
+    if p == 0 && ts > 10 && tM > 20
         tokens{end+1} = 'summer_sun';
     end
-    % Chuva de verão (raro em Seattle → marcador forte)
     if p > 2 && tM > 18 && ts < 2
         tokens{end+1} = 'summer_rain_event';
     end
-    % Drizzle de outono (mais comum)
     if p > 0 && p < 2 && tM < 14 && angle > pi && angle < 3*pi/2
         tokens{end+1} = 'autumn_drizzle';
     end
-    % Sol de verão com brisa
     if p == 0 && tM > 18 && w > 3 && w < 8
         tokens{end+1} = 'summer_breeze_sun';
     end
-    % Neve com vento forte
     if (tN < 0 || s > 0) && w > 6
         tokens{end+1} = 'snow_wind';
     end
-    % Dia cinzento de inverno (drizzle vs overcast sun)
     if tM < 10 && ts < 3 && p < 2
         tokens{end+1} = 'winter_grey_day';
     end
-    % Dia frio e seco (sun de inverno)
-    if p == 0 && tM < 12 && tN < 4 && ts > 3
+    if p == 0 && tM < 12 && tN < 4 && ts > 4
         tokens{end+1} = 'cold_clear_day';
     end
-    % Chuva leve com vento moderado (drizzle vs rain)
     if p > 0 && p < 3 && w > 4 && w < 9
         tokens{end+1} = 'light_rain_breezy';
     end
+    if hm > 88 && tM < 12 && p < 0.5 && ts < 2
+        tokens{end+1} = 'winter_coastal_fog';
+    end
+    if p == 0 && ts > 6 && hm < 70
+        tokens{end+1} = 'sun_low_humidity';
+    end
 
     % =========================================================
-    % BLOCO 18 — EXTREMOS CLIMÁTICOS
+    % BLOCO 24 — EXTREMOS CLIMÁTICOS
     % =========================================================
     if tM > 28
         tokens{end+1} = 'heat_extreme';
@@ -441,8 +565,13 @@ function tokens = extract_features(x)
     if p > 15
         tokens{end+1} = 'precip_record';
     end
-    if s > 20
+    if s > 10
         tokens{end+1} = 'snow_record';
     end
-
+    if hm > 95
+        tokens{end+1} = 'humidity_record';
+    end
+    if pm < 998
+        tokens{end+1} = 'pressure_storm';
+    end
 end
