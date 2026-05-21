@@ -10,7 +10,7 @@ addpath(fullfile(baseDir, 'minhash'));
 %% =========================
 % 1. LER DADOS CSV
 %% =========================
-data = readtable(fullfile(baseDir, 'data', 'seattle_new.csv'));
+data = readtable(fullfile(baseDir, 'data', 'aveiro.csv'));
 
 % Remover colunas que não são features
 data.date         = [];   % identificador temporal — não usar

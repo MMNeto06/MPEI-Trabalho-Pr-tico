@@ -30,6 +30,7 @@ from math import sin, cos, pi
 # ---------------------------------------------------------------------------
 
 sys.stdout.reconfigure(newline='')
+sys.stdin.reconfigure(encoding='utf-8')
 
 lines = sys.stdin.read().splitlines()
 
