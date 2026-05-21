@@ -109,6 +109,16 @@ pred_nb       = classes(idx_nb);
 acc_nb        = mean(categorical(pred_nb) == YTest);
 fprintf('\nAccuracy Naive Bayes (só): %.4f (%.2f%%)\n', acc_nb, acc_nb*100);
 
+% Colar isto após o bloco de treino, antes do ensemble_predict
+fprintf('\n=== DEBUG TOKENS AMOSTRAS 1 e 2 ===\n');
+for i = 1:2
+    tokens = extract_features(XTest(i,:));
+    fprintf('\nAmostra %d (Real: %s)\n', i, string(YTest(i)));
+    fprintf('  precip=%.3f  precip_hours=%.3f  cloud=%.3f  humidity=%.3f  sunshine=%.0f\n', ...
+        XTest(i,1), XTest(i,17), XTest(i,14), XTest(i,12), XTest(i,4));
+    fprintf('  Tokens: %s\n', strjoin(tokens, ' | '));
+end
+
 % Ensemble completo
 previsoes = ensemble_predict(XTest, YTrain, sigTrain, bf, ...
                              mu, sigma, logPrior, classes, hashData, ...
@@ -137,7 +147,7 @@ fprintf('\n=== TESTE MINHASH (Exemplos) ===\n');
 for i = 1:5
     tokens   = extract_features(XTest(i,:));
     sigQuery = minhash_single(tokens, hashData);
-    scores   = minhash_score(sigTrain, YTrain, sigQuery, classes, 5);
+    scores   = minhash_score(sigTrain, YTrain, sigQuery, classes, 20);
     
     fprintf('\nAmostra %d (Real: %s | Previsto: %s)\n', ...
         i, string(YTest(i)), string(previsoes(i)));
@@ -145,3 +155,14 @@ for i = 1:5
         fprintf('  %-10s -> %.4f\n', classes{c}, scores(c));
     end
 end
+
+idxD = YTrain == 'drizzle';
+idxR = YTrain == 'rain';
+
+fprintf('%-20s  drizzle    rain\n', 'Feature');
+fprintf('%-20s  %.3f      %.3f\n', 'precip mean',    mean(XTrain(idxD,1)),  mean(XTrain(idxR,1)));
+fprintf('%-20s  %.3f      %.3f\n', 'precip_hours',   mean(XTrain(idxD,17)), mean(XTrain(idxR,17)));
+fprintf('%-20s  %.3f      %.3f\n', 'sunshine',       mean(XTrain(idxD,4)),  mean(XTrain(idxR,4)));
+fprintf('%-20s  %.3f      %.3f\n', 'humidity_mean',  mean(XTrain(idxD,12)), mean(XTrain(idxR,12)));
+fprintf('%-20s  %.3f      %.3f\n', 'cloud_cover',    mean(XTrain(idxD,14)), mean(XTrain(idxR,14)));
+fprintf('%-20s  %.3f      %.3f\n', 'wind_speed_max', mean(XTrain(idxD,6)),  mean(XTrain(idxR,6)));
