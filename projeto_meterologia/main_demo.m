@@ -51,7 +51,7 @@ disp(removevars(data,'weather').Properties.VariableNames);
 %% =========================
 % 2. SPLIT TREINO / TESTE
 %% =========================
-rng(42);
+rng();
 idx = randperm(size(X,1));
 trainRatio = 0.8;
 nTrain     = round(trainRatio * length(idx));
