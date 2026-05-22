@@ -1,6 +1,6 @@
 function evaluate(YTeste, previsoes, classes, XTeste, bf, bf_cols, bf_breaks)
     nClasses = numel(classes);
-    nTeste   = numel(YTeste);
+    nTeste = numel(YTeste);
 
     %% 1) Bloom Filter 
     fprintf('=== Bloom Filter: Dias de Teste vs Histórico ===\n');
@@ -25,23 +25,23 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf, bf_cols, bf_breaks)
     fprintf('%s\n', repmat('-', 1, 55));
 
     precisoes = zeros(nClasses, 1);
-    recalls   = zeros(nClasses, 1);
-    f1scores  = zeros(nClasses, 1);
-    suportes  = zeros(nClasses, 1);
+    recalls = zeros(nClasses, 1);
+    f1scores = zeros(nClasses, 1);
+    suportes = zeros(nClasses, 1);
 
     for c = 1:nClasses
         tp = sum(previsoes == classes{c} & YTeste == classes{c});
         fp = sum(previsoes == classes{c} & YTeste ~= classes{c});
         fn = sum(previsoes ~= classes{c} & YTeste == classes{c});
 
-        p  = tp / max(tp + fp, 1);
-        r  = tp / max(tp + fn, 1);
+        p = tp / max(tp + fp, 1);
+        r = tp / max(tp + fn, 1);
         f1 = 2 * p * r / max(p + r, 1e-9);
 
         precisoes(c) = p;
-        recalls(c)   = r;
-        f1scores(c)  = f1;
-        suportes(c)  = sum(YTeste == classes{c});
+        recalls(c) = r;
+        f1scores(c) = f1;
+        suportes(c) = sum(YTeste == classes{c});
 
         fprintf('%-12s  %9.4f  %9.4f  %9.4f  %6d\n', classes{c}, p, r, f1, suportes(c));
     end
@@ -56,8 +56,8 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf, bf_cols, bf_breaks)
     fprintf('%-12s  %9.4f  %9.4f  %9.4f  %6d\n', ...
         'Weighted avg', ...
         sum(precisoes .* suportes) / nTeste, ...
-        sum(recalls   .* suportes) / nTeste, ...
-        sum(f1scores  .* suportes) / nTeste, ...
+        sum(recalls .* suportes) / nTeste, ...
+        sum(f1scores .* suportes) / nTeste, ...
         nTeste);
 
     %% 4) Matriz de confusão 
@@ -85,9 +85,9 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf, bf_cols, bf_breaks)
     try
         figure('Name', 'Matriz de Confusão');
         cm = confusionchart(YTeste, previsoes, ...
-            'RowSummary',    'row-normalized', ...
+            'RowSummary', 'row-normalized', ...
             'ColumnSummary', 'column-normalized', ...
-            'Title',         'Naive Bayes Gaussiano — Seattle Weather');
+            'Title', 'Naive Bayes Gaussiano');
         cm.ClassLabels = classes;
     catch
     end

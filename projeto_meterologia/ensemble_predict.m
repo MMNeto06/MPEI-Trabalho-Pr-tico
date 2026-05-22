@@ -1,20 +1,20 @@
 function previsoes = ensemble_predict(XTeste, YTrain, sigTrain, bf, ...
                                       mu, sigma, logPrior, classes, hashData, ...
                                       w_nb, w_mh, w_bf, bf_cols, bf_breaks, thresholds)
-    nTeste   = size(XTeste, 1);
+    nTeste = size(XTeste, 1);
     nClasses = numel(classes);
     previsoes = categorical(strings(nTeste, 1));
 
     testTokens = cell(nTeste, 1);
-    sigTest    = zeros(size(sigTrain,1), nTeste);
+    sigTest = zeros(size(sigTrain,1), nTeste);
     for i = 1:nTeste
         testTokens{i} = extract_features(XTeste(i,:), thresholds);
-        sigTest(:,i)  = minhash_single(testTokens{i}, hashData);
+        sigTest(:,i) = minhash_single(testTokens{i}, hashData);
     end
 
     allSims = zeros(nTeste, size(sigTrain,2));
     for i = 1:nTeste
-        matches      = sigTrain == sigTest(:,i);
+        matches = sigTrain == sigTest(:,i);
         allSims(i,:) = mean(matches, 1);
     end
 
@@ -22,15 +22,15 @@ function previsoes = ensemble_predict(XTeste, YTrain, sigTrain, bf, ...
         %% 1. Naive Bayes
         [~, log_nb] = nb_predict(XTeste(i,:), mu, sigma, logPrior, classes);
         log_nb = log_nb(:)' - max(log_nb(:));
-        p_nb   = exp(log_nb) / sum(exp(log_nb));
+        p_nb = exp(log_nb) / sum(exp(log_nb));
 
         %% 2. MinHash (top-20 por classe)
         sims = allSims(i,:);
         p_mh = zeros(1, nClasses);
         for c = 1:nClasses
-            idx_c    = (YTrain == classes{c});
-            topK     = maxk(sims(idx_c), min(20, sum(idx_c)));
-            p_mh(c)  = mean(topK);
+            idx_c = (YTrain == classes{c});
+            topK = maxk(sims(idx_c), min(20, sum(idx_c)));
+            p_mh(c) = mean(topK);
         end
         p_mh = p_mh / (sum(p_mh) + 1e-9);
 
@@ -45,45 +45,45 @@ function previsoes = ensemble_predict(XTeste, YTrain, sigTrain, bf, ...
         end
 
         %% 4. Bloom Filter — ajuste de pesos por novidade
-        key  = build_bf_key(XTeste(i,:), bf_cols, bf_breaks);
+        key = build_bf_key(XTeste(i,:), bf_cols, bf_breaks);
         if bloom_check(bf, key)
             % Amostra familiar: p_bf reforça o NB
             p_bf = p_nb;
         else
             % Amostra nova: conservador, redistribuir pesos
             p_bf = ones(1, nClasses) / nClasses;
-            w1   = max(w1 - 0.05, 0.30);
-            w2   = min(w2 + 0.05, 0.65);
-            w3   = 0.05;
+            w1 = max(w1 - 0.05, 0.30);
+            w2 = min(w2 + 0.05, 0.65);
+            w3 = 0.05;
         end
         p_bf = p_bf / sum(p_bf);
 
         %% 5. Score final
         final_score = w1 * p_nb + w2 * p_mh + w3 * p_bf;
-        [~, idx]    = max(final_score);
-        pred_class  = classes{idx};
+        [~, idx] = max(final_score);
+        pred_class = classes{idx};
 
         %% 6. Desempate drizzle/rain com limiares dinâmicos
         score_drizzle = final_score(strcmp(classes, 'drizzle'));
-        score_rain    = final_score(strcmp(classes, 'rain'));
-        diff_dr       = abs(score_drizzle - score_rain);
+        score_rain = final_score(strcmp(classes, 'rain'));
+        diff_dr = abs(score_drizzle - score_rain);
         
         if diff_dr < 0.12 && (strcmp(pred_class,'drizzle') || strcmp(pred_class,'rain'))
             precip_i = XTeste(i, 1);
-            phr_i    = XTeste(i, 17);
-            cloud_i  = XTeste(i, 14);
-            hum_i    = XTeste(i, 12);
+            phr_i = XTeste(i, 17);
+            cloud_i = XTeste(i, 14);
+            hum_i = XTeste(i, 12);
         
             % Normalizar pelo ponto de separação dinâmico em vez de divisores fixos
-            rain_score = (precip_i / thresholds.precip_low)  * 2 + ...
-                         (phr_i    / thresholds.phr_short)   * 2 + ...
-                         (cloud_i  / thresholds.cloud_overcast)   + ...
-                         (hum_i    / thresholds.hum_rain);
+            rain_score = (precip_i / thresholds.precip_low) * 2 + ...
+                         (phr_i / thresholds.phr_short) * 2 + ...
+                         (cloud_i / thresholds.cloud_overcast) + ...
+                         (hum_i / thresholds.hum_rain);
         
-            driz_score = ((thresholds.precip_low   - precip_i) / thresholds.precip_low)  * 2 + ...
-                         ((thresholds.phr_short    - phr_i)    / thresholds.phr_short)   * 2 + ...
+            driz_score = ((thresholds.precip_low - precip_i) / thresholds.precip_low)  * 2 + ...
+                         ((thresholds.phr_short - phr_i) / thresholds.phr_short)   * 2 + ...
                          ((thresholds.cloud_overcast - cloud_i) / thresholds.cloud_overcast)  + ...
-                         ((thresholds.hum_rain     - hum_i)    / thresholds.hum_rain);
+                         ((thresholds.hum_rain - hum_i) / thresholds.hum_rain);
         
             if rain_score > driz_score * 1.15
                 pred_class = 'rain';
