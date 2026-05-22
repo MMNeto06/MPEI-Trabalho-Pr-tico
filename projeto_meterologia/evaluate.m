@@ -1,4 +1,4 @@
-function evaluate(YTeste, previsoes, classes, XTeste, bf)
+function evaluate(YTeste, previsoes, classes, XTeste, bf, thresholds)
 %EVALUATE  Calcula e imprime métricas de classificação + matriz de confusão.
 %
 %   evaluate(YTeste, previsoes, classes)
@@ -17,7 +17,7 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf)
     fprintf('=== Bloom Filter: Dias de Teste vs Histórico ===\n');
     nNaoVisto = 0;
     for i = 1:nTeste
-        tokens = extract_features(XTeste(i, :));   % mesmo método que no insert
+        tokens = extract_features(XTeste(i,:), thresholds);
         chave = lower(strjoin(sort(string(tokens)), '|'));      % mesmo formato que no insert
         if ~bloom_check(bf, chave)
             nNaoVisto = nNaoVisto + 1;

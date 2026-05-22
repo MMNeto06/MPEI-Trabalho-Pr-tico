@@ -1,122 +1,94 @@
-function tokens = extract_features(row)
+function tokens = extract_features(row, thr)
     precip       = row(1);
     sunshine     = row(4);
     wind_gusts   = row(7);
-    temp_range   = row(9);
     humidity     = row(12);
     cloud        = row(14);
     press_mean   = row(15);
     press_min    = row(16);
     precip_hours = row(17);
+    press_drop   = press_mean - press_min;
 
-    press_drop = press_mean - press_min;
-
-    % --- tokens existentes (sem alteração) ---
-    if precip == 0
-        p_tok = 'precip_none';
-
-    elseif precip < 1
-        p_tok = 'precip_trace';
-    
-    elseif precip < 3
-        p_tok = 'precip_drizzle';
-    
-    elseif precip < 6
-        p_tok = 'precip_light_rain';
-    
-    elseif precip < 12
-        p_tok = 'precip_rain';
-    
-    else
-        p_tok = 'precip_heavy';
-    end
-        
-    if precip_hours == 0
-        ph_tok = 'phr_none';
-    
-    elseif precip_hours < 2
-        ph_tok = 'phr_brief';
-    
-    elseif precip_hours < 5
-        ph_tok = 'phr_short';
-    
-    elseif precip_hours < 9
-        ph_tok = 'phr_medium';
-    
-    elseif precip_hours < 15
-        ph_tok = 'phr_long';
-    
-    else
-        ph_tok = 'phr_persistent';
+    % Precipitação
+    if     precip == 0,                     p_tok = 'precip_none';
+    elseif precip < thr.precip_trace,       p_tok = 'precip_trace';
+    elseif precip < thr.precip_low,         p_tok = 'precip_drizzle';
+    elseif precip < thr.precip_med,         p_tok = 'precip_low';
+    else,                                   p_tok = 'precip_heavy';
     end
 
-    if     cloud > 82,         c_tok = 'cloud_heavy';
-    elseif cloud > 60,         c_tok = 'cloud_overcast';
-    elseif cloud > 35,         c_tok = 'cloud_partial';
-    else,                      c_tok = 'cloud_clear';
+    % Horas de precipitação
+    if     precip_hours == 0,               ph_tok = 'phr_none';
+    elseif precip_hours < thr.phr_brief,    ph_tok = 'phr_brief';
+    elseif precip_hours < thr.phr_short,    ph_tok = 'phr_short';
+    elseif precip_hours < thr.phr_moderate, ph_tok = 'phr_moderate';
+    else,                                   ph_tok = 'phr_persistent';
     end
 
-    if     humidity > 82,      h_tok = 'hum_rain';
-    elseif humidity > 70,      h_tok = 'hum_drizzle';
-    elseif humidity > 50,      h_tok = 'hum_mid';
-    else,                      h_tok = 'hum_low';
+    % Cobertura de nuvens
+    if     cloud < thr.cloud_clear,         c_tok = 'cloud_clear';
+    elseif cloud < thr.cloud_partial,       c_tok = 'cloud_partial';
+    elseif cloud < thr.cloud_overcast,      c_tok = 'cloud_overcast';
+    else,                                   c_tok = 'cloud_heavy';
     end
 
-    if     sunshine > 25200,   s_tok = 'sun_high';
-    elseif sunshine > 10800,   s_tok = 'sun_mid';
-    elseif sunshine > 3600,    s_tok = 'sun_low';
-    else,                      s_tok = 'sun_none';
+    % Humidade
+    if     humidity < thr.hum_low,          h_tok = 'hum_low';
+    elseif humidity < thr.hum_mid,          h_tok = 'hum_mid';
+    elseif humidity < thr.hum_drizzle,      h_tok = 'hum_drizzle';
+    else,                                   h_tok = 'hum_rain';
     end
 
-    % --- token de vento/tempestade (novo) ---
-    if     wind_gusts > 50 && temp_range > 12,  w_tok = 'storm_likely';
-    elseif wind_gusts > 40,                      w_tok = 'windy';
-    else,                                         w_tok = 'calm';
+    % Sunshine
+    if     sunshine < thr.sun_none,         s_tok = 'sun_none';
+    elseif sunshine < thr.sun_low,          s_tok = 'sun_low';
+    elseif sunshine < thr.sun_mid,          s_tok = 'sun_mid';
+    else,                                   s_tok = 'sun_high';
     end
 
-    % --- token de pressão (novo) ---
-    if     press_drop > 8 && press_min < 1008,   pr_tok = 'press_storm';
-    elseif press_drop > 4,                        pr_tok = 'press_drop';
-    elseif press_min > 1018,                      pr_tok = 'press_high';
-    else,                                          pr_tok = 'press_normal';
+    % Vento
+    if     wind_gusts < thr.wind_calm,      w_tok = 'calm';
+    elseif wind_gusts < thr.wind_windy,     w_tok = 'windy';
+    else,                                   w_tok = 'storm_likely';
     end
 
-    % --- combo (limiares reais) ---
-    if     precip == 0   && cloud < 35,                        combo = 'clear_sun';
-    elseif precip == 0   && humidity > 70,                     combo = 'dry_humid';
-    elseif precip < 2    && precip_hours < 6  && cloud < 75,   combo = 'light_drizzle';
-    elseif precip > 5 && precip_hours > 5 && cloud > 75,       combo = 'sustained_rain';
-    elseif precip > 10   && humidity > 82,                     combo = 'heavy_humid';
-    else,                                                       combo = 'ambiguous';
+    % Pressão — agora usa press_drop também
+    if     press_mean > thr.press_high && press_drop < 3,   pr_tok = 'press_high';
+    elseif press_min  < thr.press_drop || press_drop > 8,   pr_tok = 'press_storm';
+    else,                                                    pr_tok = 'press_normal';
     end
 
-    cross_tokens = {
-        strcat(p_tok, '_', ph_tok)
-        strcat(p_tok, '_', h_tok)
-        strcat(p_tok, '_', c_tok)
-    
-        strcat(ph_tok, '_', h_tok)
-        strcat(ph_tok, '_', c_tok)
-    
-        strcat(h_tok, '_', c_tok)
-    
-        strcat(combo, '_', p_tok)
-        strcat(combo, '_', ph_tok)
-    
-        strcat(s_tok, '_', c_tok)
-        strcat(w_tok, '_', pr_tok)
-    };
+    % Combo — limiares dinâmicos + casos de fog
+    if     precip == 0 && cloud < thr.cloud_clear && humidity < thr.hum_mid
+                                                            combo = 'clear_sun';
+    elseif precip == 0 && humidity > thr.hum_drizzle && cloud > thr.cloud_partial
+                                                            combo = 'dry_humid';      % fog territory
+    elseif precip < thr.precip_trace && precip_hours < thr.phr_short
+                                                            combo = 'light_drizzle';
+    elseif precip > thr.precip_low && precip_hours > thr.phr_moderate && cloud > thr.cloud_overcast
+                                                            combo = 'sustained_rain';
+    elseif precip > thr.precip_low && humidity > thr.hum_rain
+                                                            combo = 'heavy_humid';
+    elseif precip == 0 && wind_gusts > thr.wind_windy
+                                                            combo = 'dry_windy';      % thunder/föhn
+    else,                                                   combo = 'ambiguous';
+    end
 
-    tokens = {
-        p_tok,
-        h_tok,
-        c_tok,
-        ph_tok,
-        s_tok,
-        combo,
-        w_tok,
-        pr_tok
-    };
+    % Tokens de interacção par-a-par
+    t1  = strcat(p_tok,  '_', ph_tok);
+    t2  = strcat(p_tok,  '_', h_tok);
+    t3  = strcat(p_tok,  '_', c_tok);
+    t4  = strcat(ph_tok, '_', h_tok);
+    t5  = strcat(ph_tok, '_', c_tok);
+    t6  = strcat(h_tok,  '_', c_tok);
+    t7  = strcat(combo,  '_', p_tok);
+    t8  = strcat(combo,  '_', ph_tok);
+    t9  = strcat(s_tok,  '_', c_tok);
+    t10 = strcat(w_tok,  '_', pr_tok);
+    t11 = strcat(p_tok,  '_', w_tok);    % precip + vento → separa thunder de rain
+    t12 = strcat(h_tok,  '_', pr_tok);   % humidade + pressão → fog vs drizzle
+    t13 = strcat(s_tok,  '_', h_tok);    % sunshine + humidade → fog vs sun
 
-    tokens = [tokens(:)' cross_tokens(:)'];
+    tokens = {p_tok, h_tok, c_tok, ph_tok, s_tok, combo, w_tok, pr_tok, ...
+              t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13};
 end

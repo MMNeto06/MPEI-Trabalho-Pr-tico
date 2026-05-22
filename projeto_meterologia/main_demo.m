@@ -10,7 +10,7 @@ addpath(fullfile(baseDir, 'minhash'));
 %% =========================
 % 1. LER DADOS CSV
 %% =========================
-data = readtable(fullfile(baseDir, 'data', 'beijing.csv'));
+data = readtable(fullfile(baseDir, 'data', 'seattle_new.csv'));
 
 % Remover colunas que não são features
 data.date         = [];   % identificador temporal — não usar
@@ -25,28 +25,7 @@ data.cos_x_tmax  = data.month_cos .* data.temp_max;
 % Label
 Y = categorical(data.weather);
 
-% Features numéricas (tudo menos weather)
-% Ordem das colunas em X após remoções + compostas:
-%   x( 1) precipitation        x( 7) wind_gusts_max
-%   x( 2) temp_max             x( 8) snowfall
-%   x( 3) temp_min             x( 9) temp_range
-%   x( 4) sunshine_duration    x(10) month_sin
-%   x( 5) shortwave_radiation  x(11) month_cos
-%   x( 6) wind_speed_max       x(12) humidity_mean
-%   x(13) humidity_min         x(14) cloud_cover_mean
-%   x(15) pressure_mean        x(16) pressure_min
-%   x(17) precipitation_hours  x(18) temp_mean (composta)
-%   x(19) season_temp (composta)   x(20) cos_x_tmax (composta)
 X = table2array(removevars(data, 'weather'));
-
-fprintf('Linhas totais           : %d\n', size(X,1));
-fprintf('Features totais         : %d\n', size(X,2));
-fprintf('Precipitação não-zero   : %d/%d (%.1f%%)\n', ...
-    sum(X(:,1)>0), size(X,1), 100*mean(X(:,1)>0));
-fprintf('Classes: %s\n', strjoin(categories(Y), ', '));
-
-disp('Colunas de features:');
-disp(removevars(data,'weather').Properties.VariableNames);
 
 %% =========================
 % 2. SPLIT TREINO / TESTE
@@ -71,19 +50,31 @@ fprintf('XTrain — precipitação não-zero : %d/%d\n', ...
 %% =========================
 % 3. BLOOM FILTER (TREINO)
 %% =========================
-bf = bloom_init(50000, 7);
+%% BLOOM FILTER — chave quantizada (substituir o bloco actual)
+bf = bloom_init(500000, 7);
+
+% Features a usar na chave: precip, precip_hours, cloud, humidity, temp_max, wind_gusts
+bf_cols   = [1, 17, 14, 12, 2, 7];
+bf_breaks = [2, 4, 10; ...   % precip:      0|<2|<4|<10|>=10
+             3, 6, 12; ...   % precip_hours: 0|<3|<6|<12|>=12
+             35,60, 80; ...  % cloud:       <35|<60|<80|>=80
+             55,70, 82; ...  % humidity:    <55|<70|<82|>=82
+             10,18, 25; ...  % temp_max:    <10|<18|<25|>=25
+             25,40, 55];     % wind_gusts:  <25|<40|<55|>=55
+
 for i = 1:size(XTrain,1)
-    tokens = extract_features(XTrain(i,:));
-    key    = lower(strjoin(sort(string(tokens)), '|'));
-    bf     = bloom_insert(bf, key);
+    key = build_bf_key(XTrain(i,:), bf_cols, bf_breaks);
+    bf  = bloom_insert(bf, key);
 end
 
 %% =========================
 % 4. MINHASH (TREINO)
 %% =========================
+%% LIMIARES DINÂMICOS (calculados do treino)
+thresholds = compute_thresholds(XTrain, YTrain);
 trainTokens = cell(size(XTrain,1), 1);
 for i = 1:size(XTrain,1)
-    trainTokens{i} = extract_features(XTrain(i,:));
+    trainTokens{i} = extract_features(XTrain(i,:), thresholds);
 end
 [sigTrain, hashData] = minhash_signature(trainTokens, 200);
 
@@ -109,25 +100,15 @@ pred_nb       = classes(idx_nb);
 acc_nb        = mean(categorical(pred_nb) == YTest);
 fprintf('\nAccuracy Naive Bayes (só): %.4f (%.2f%%)\n', acc_nb, acc_nb*100);
 
-% Colar isto após o bloco de treino, antes do ensemble_predict
-fprintf('\n=== DEBUG TOKENS AMOSTRAS 1 e 2 ===\n');
-for i = 1:2
-    tokens = extract_features(XTest(i,:));
-    fprintf('\nAmostra %d (Real: %s)\n', i, string(YTest(i)));
-    fprintf('  precip=%.3f  precip_hours=%.3f  cloud=%.3f  humidity=%.3f  sunshine=%.0f\n', ...
-        XTest(i,1), XTest(i,17), XTest(i,14), XTest(i,12), XTest(i,4));
-    fprintf('  Tokens: %s\n', strjoin(tokens, ' | '));
-end
-
 % Ensemble completo
 previsoes = ensemble_predict(XTest, YTrain, sigTrain, bf, ...
                              mu, sigma, logPrior, classes, hashData, ...
-                             w_nb, w_mh, w_bf);
+                             w_nb, w_mh, w_bf, bf_cols, bf_breaks, thresholds);
 
 %% =========================
 % 8. AVALIAÇÃO
 %% =========================
-evaluate(YTest, previsoes, classes, XTest, bf);
+evaluate(YTest, previsoes, classes, XTest, bf, thresholds);
 
 fprintf('\n=== RESULTADOS DO ENSEMBLE ===\n');
 acc = mean(previsoes == YTest);
@@ -139,30 +120,3 @@ cm = confusionchart(YTest, previsoes);
 cm.Title          = 'Ensemble — Matriz de Confusão (Seattle Weather)';
 cm.RowSummary     = 'row-normalized';
 cm.ColumnSummary  = 'column-normalized';
-
-%% =========================
-% 9. TESTE VISUAL MINHASH
-%% =========================
-fprintf('\n=== TESTE MINHASH (Exemplos) ===\n');
-for i = 1:5
-    tokens   = extract_features(XTest(i,:));
-    sigQuery = minhash_single(tokens, hashData);
-    scores   = minhash_score(sigTrain, YTrain, sigQuery, classes, 20);
-    
-    fprintf('\nAmostra %d (Real: %s | Previsto: %s)\n', ...
-        i, string(YTest(i)), string(previsoes(i)));
-    for c = 1:numel(classes)
-        fprintf('  %-10s -> %.4f\n', classes{c}, scores(c));
-    end
-end
-
-idxD = YTrain == 'drizzle';
-idxR = YTrain == 'rain';
-
-fprintf('%-20s  drizzle    rain\n', 'Feature');
-fprintf('%-20s  %.3f      %.3f\n', 'precip mean',    mean(XTrain(idxD,1)),  mean(XTrain(idxR,1)));
-fprintf('%-20s  %.3f      %.3f\n', 'precip_hours',   mean(XTrain(idxD,17)), mean(XTrain(idxR,17)));
-fprintf('%-20s  %.3f      %.3f\n', 'sunshine',       mean(XTrain(idxD,4)),  mean(XTrain(idxR,4)));
-fprintf('%-20s  %.3f      %.3f\n', 'humidity_mean',  mean(XTrain(idxD,12)), mean(XTrain(idxR,12)));
-fprintf('%-20s  %.3f      %.3f\n', 'cloud_cover',    mean(XTrain(idxD,14)), mean(XTrain(idxR,14)));
-fprintf('%-20s  %.3f      %.3f\n', 'wind_speed_max', mean(XTrain(idxD,6)),  mean(XTrain(idxR,6)));
