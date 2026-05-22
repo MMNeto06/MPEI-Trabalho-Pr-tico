@@ -11,7 +11,7 @@ tic;
 % 1. LER DADOS 
 data = readtable(fullfile(baseDir, 'data', 'aveiro.csv'));
 
-% Remover colunas que não são features
+% Remover colunas que não são features/obsoleto
 data.date = [];  
 data.dew_point_mean = []; 
 data.dew_point_max = []; 
