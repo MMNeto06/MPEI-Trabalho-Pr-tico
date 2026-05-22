@@ -52,7 +52,7 @@ function tokens = extract_features(row, thr)
     else,                                   w_tok = 'storm_likely';
     end
 
-    % Pressão — agora usa press_drop também
+    % Pressão
     if     press_mean > thr.press_high && press_drop < 3,   pr_tok = 'press_high';
     elseif press_min  < thr.press_drop || press_drop > 8,   pr_tok = 'press_storm';
     else,                                                    pr_tok = 'press_normal';
@@ -62,7 +62,7 @@ function tokens = extract_features(row, thr)
     if     precip == 0 && cloud < thr.cloud_clear && humidity < thr.hum_mid
                                                             combo = 'clear_sun';
     elseif precip == 0 && humidity > thr.hum_drizzle && cloud > thr.cloud_partial
-                                                            combo = 'dry_humid';      % fog territory
+                                                            combo = 'dry_humid';     
     elseif precip < thr.precip_trace && precip_hours < thr.phr_short
                                                             combo = 'light_drizzle';
     elseif precip > thr.precip_low && precip_hours > thr.phr_moderate && cloud > thr.cloud_overcast
@@ -70,11 +70,10 @@ function tokens = extract_features(row, thr)
     elseif precip > thr.precip_low && humidity > thr.hum_rain
                                                             combo = 'heavy_humid';
     elseif precip == 0 && wind_gusts > thr.wind_windy
-                                                            combo = 'dry_windy';      % thunder/föhn
+                                                            combo = 'dry_windy';      
     else,                                                   combo = 'ambiguous';
     end
 
-    % Tokens de interacção par-a-par
     t1  = strcat(p_tok,  '_', ph_tok);
     t2  = strcat(p_tok,  '_', h_tok);
     t3  = strcat(p_tok,  '_', c_tok);
@@ -85,9 +84,9 @@ function tokens = extract_features(row, thr)
     t8  = strcat(combo,  '_', ph_tok);
     t9  = strcat(s_tok,  '_', c_tok);
     t10 = strcat(w_tok,  '_', pr_tok);
-    t11 = strcat(p_tok,  '_', w_tok);    % precip + vento → separa thunder de rain
-    t12 = strcat(h_tok,  '_', pr_tok);   % humidade + pressão → fog vs drizzle
-    t13 = strcat(s_tok,  '_', h_tok);    % sunshine + humidade → fog vs sun
+    t11 = strcat(p_tok,  '_', w_tok);    
+    t12 = strcat(h_tok,  '_', pr_tok);   
+    t13 = strcat(s_tok,  '_', h_tok);    
 
     tokens = {p_tok, h_tok, c_tok, ph_tok, s_tok, combo, w_tok, pr_tok, ...
               t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13};

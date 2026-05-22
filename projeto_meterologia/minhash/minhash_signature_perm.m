@@ -1,6 +1,6 @@
-function sig = minhash_signature_perm(conjuntos, nHash)
 % Não vai ser utilzado. Pode ser utilizado apenas para fazer comparações de
 % performance (esta forma está nos slides, mas é muito mais ineficiente)
+function sig = minhash_signature_perm(conjuntos, nHash)
     N        = numel(conjuntos);
     universo = unique([conjuntos{:}]);
     U        = numel(universo);

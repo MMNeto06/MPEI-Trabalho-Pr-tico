@@ -1,6 +1,5 @@
 %{
 Esta função usa double hashing para reduzir colisões. 
-Might be too much, idk. 
 DJB2 em h1 e FNV-1a em h2
 %}
 function positions = bloom_hash(str, bf)
@@ -29,8 +28,8 @@ function positions = bloom_hash(str, bf)
 end
 
 %{
-A de cima é muito (pode ser demasiado) op, vou deixar aqui esta 
-pelo sim, pelo não
+Função de hash muito simples (má). Poderá ser utilizada para comparação de
+resultados
 function positions = bloom_hash(str, bf)
     s = double(str);
 

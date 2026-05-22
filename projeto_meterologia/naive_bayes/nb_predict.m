@@ -1,19 +1,4 @@
 function [previsoes, probas] = nb_predict(XTeste, mu, sigma, logPrior, classes)
-%NB_PREDICT  Classifica amostras com um Naive Bayes Gaussiano já treinado.
-%
-%   [previsoes, probas] = nb_predict(XTeste, mu, sigma, logPrior, classes)
-%
-%   Entradas:
-%     XTeste    — matriz (nTeste x nFeatures) de features contínuas
-%     mu        — matriz (nClasses x nFeatures) das médias (saída de nb_train)
-%     sigma     — matriz (nClasses x nFeatures) dos desvios-padrão (saída de nb_train)
-%     logPrior  — vetor  (nClasses x 1) com log-priors (saída de nb_train)
-%     classes   — cell array com os nomes das classes (saída de nb_train)
-%
-%   Saídas:
-%     previsoes — vetor categorical (nTeste x 1) com a classe prevista
-%     probas    — matriz (nTeste x nClasses) com probabilidades por classe (softmax)
-
     % log da densidade Gaussiana: logN(x | m, s)
     logGauss = @(x, m, s) -log(s) - 0.5*log(2*pi) - 0.5*((x - m)./s).^2;
 
@@ -32,7 +17,6 @@ function [previsoes, probas] = nb_predict(XTeste, mu, sigma, logPrior, classes)
             logPost(c) = logPrior(c) + sum(logGauss(x, mu(c,:), sigma(c,:)));
         end
 
-        % Softmax numericamente estável → probabilidades
         logPost  = logPost - max(logPost);
         prob     = exp(logPost) / sum(exp(logPost));
         probas(i, :) = prob';

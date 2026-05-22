@@ -1,12 +1,10 @@
 function scores = minhash_score(sigTrain, YTrain, sigQuery, classes, k)
     nClasses = numel(classes);
     scores   = zeros(1, nClasses);
-    sigQuery = sigQuery(:);          % (numHashes × 1)
+    sigQuery = sigQuery(:);          
 
-    % Similaridade Jaccard aproximada: fracção de posições iguais
-    % sigTrain é (numHashes × nTrain) — comparação vectorizada com broadcast
-    matches = sigTrain == sigQuery;  % (numHashes × nTrain), lógico
-    allSims = mean(matches, 1);      % (1 × nTrain)
+    matches = sigTrain == sigQuery;  
+    allSims = mean(matches, 1);      
 
     for c = 1:nClasses
         idx  = (YTrain == classes{c});
@@ -16,7 +14,7 @@ function scores = minhash_score(sigTrain, YTrain, sigQuery, classes, k)
             continue;
         end
         k_eff     = min(k, numel(sims));
-        topK      = maxk(sims, k_eff);   % top-K sem sort completo
+        topK      = maxk(sims, k_eff);   
         scores(c) = mean(topK);
     end
 
