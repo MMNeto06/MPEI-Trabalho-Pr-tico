@@ -10,21 +10,29 @@ from math import sin, cos, pi
 # Output: CSV com colunas padronizadas + label de weather (Sem weather_code para evitar leakage)
 #
 # Labels (prioridade crescente):
-#   sun → fog → drizzle → rain → snow → thunder
+#   sun → cloudy → fog → drizzle → rain → snow → thunder
 #
 # Estratégia de classificação:
+#   • cloudy  → WMO code 2 (partly cloudy) ou 3 (overcast)
+#              + heurística: cloud_cover_mean ≥ 70 % sem precipitação significativa
 #   • drizzle / rain / snow → WMO code é fonte primária (fiável)
 #   • fog    → heurística sempre ativa (Open-Meteo histórico raramente emite WMO 45/48)
 #   • thunder → heurística sempre ativa (WMO 95/96/99 raramente aparece no histórico)
 #              + WMO 95/96/99 se presentes
 #
 # WMO codes usados pelo Open-Meteo:
-#   0–3          → sun/cloudy (base)
+#   0–1          → sun (clear / mainly clear)
+#   2            → cloudy (partly cloudy)
+#   3            → cloudy (overcast)
 #   45, 48       → fog
 #   51,53,55–57  → drizzle
 #   61–67,80–82  → rain   (82 = violent shower → thunder se intensidade ≥ 2.5 mm/h)
 #   71–77,85–86  → snow
 #   95,96,99     → thunder
+#
+# Variáveis Open-Meteo necessárias (adicionais face à versão anterior):
+#   ✓ Maximum Cloud Cover (cloud_cover_max) — distingue nublado todo o dia vs pontual
+#   ✓ Minimum Cloud Cover (cloud_cover_min) — variação diária de nebulosidade
 #
 # Uso: python weather_openmeteo.py < seattle_open_meteo.csv > seattle_new.csv
 # ---------------------------------------------------------------------------
@@ -53,6 +61,7 @@ reader = csv.DictReader(data_lines, fieldnames=header_line.split(','))
 # WMO code sets
 # ---------------------------------------------------------------------------
 
+WMO_CLOUDY   = {2, 3}                       # partly cloudy, overcast
 WMO_FOG      = {45, 48}
 WMO_DRIZZLE  = {51, 53, 55, 56, 57}
 WMO_RAIN     = {61, 63, 65, 66, 67, 80, 81, 82}
@@ -93,26 +102,32 @@ def parse_date(raw):
 #
 # Camadas (cada uma pode sobrescrever a anterior):
 #
-#  1. Base WMO   — drizzle / rain / snow a partir do WMO code
-#  2. Fog        — heurística: spread temp_min−dew_mean < 2.5 °C
+#  1. Base WMO   — cloudy (2/3) / drizzle / rain / snow a partir do WMO code
+#  2. Cloudy     — heurística: cloud_cover_mean ≥ 70 %
+#                              + cloud_cover_max ≥ 80 % (se disponível)
+#                              + precipitação < 0.3 mm
+#                 Só activa se label base for 'sun'
+#  3. Fog        — heurística: spread temp_min−dew_mean < 2.5 °C
 #                              + humidade ≥ 88 %
 #                              + cloud cover ≥ 80 %
 #                              + precipitação < 0.3 mm
-#                 Só activa se label base for 'sun' (não sobrescreve chuva/neve)
-#  3. Thunder    — WMO 95/96/99  OU
+#                 Activa se label for 'sun' ou 'cloudy'
+#  4. Thunder    — WMO 95/96/99  OU
 #                  chuva intensa: prcp ≥ 10 mm E intensidade ≥ 2.5 mm/h
 #                 Só activa se label for 'rain'
 # ---------------------------------------------------------------------------
 
 def classify_weather(d):
-    wmo_code   = safe_int(d.get('weather_code (wmo code)', ''))
-    prcp       = safe_float(d.get('precipitation_sum (mm)'))
-    prcp_hours = safe_float(d.get('precipitation_hours (h)'))
-    snowfall   = safe_float(d.get('snowfall_sum (cm)'))
-    rh_mean    = safe_float(d.get('relative_humidity_2m_mean (%)'))
-    cloud_mean = safe_float(d.get('cloud_cover_mean (%)'))
-    dew_mean   = safe_float(d.get('dew_point_2m_mean (°C)'))
-    temp_min   = safe_float(d.get('temperature_2m_min (°C)'))
+    wmo_code      = safe_int(d.get('weather_code (wmo code)', ''))
+    prcp          = safe_float(d.get('precipitation_sum (mm)'))
+    prcp_hours    = safe_float(d.get('precipitation_hours (h)'))
+    snowfall      = safe_float(d.get('snowfall_sum (cm)'))
+    rh_mean       = safe_float(d.get('relative_humidity_2m_mean (%)'))
+    cloud_mean    = safe_float(d.get('cloud_cover_mean (%)'))
+    cloud_max     = safe_float(d.get('cloud_cover_max (%)'), default=-1.0)   # pode não existir
+    cloud_min     = safe_float(d.get('cloud_cover_min (%)'), default=-1.0)   # pode não existir
+    dew_mean      = safe_float(d.get('dew_point_2m_mean (°C)'))
+    temp_min      = safe_float(d.get('temperature_2m_min (°C)'))
 
     # ------------------------------------------------------------------
     # 1. Label base via WMO code
@@ -127,8 +142,10 @@ def classify_weather(d):
         weather = 'fog'
     elif wmo_code in WMO_THUNDER:
         weather = 'thunder'
+    elif wmo_code in WMO_CLOUDY:
+        weather = 'cloudy'
     else:
-        # WMO 0–3 (sun/cloudy) ou desconhecido: heurísticas decidem
+        # WMO 0–1 (sun) ou desconhecido: heurísticas decidem
         if snowfall > 0:
             weather = 'snow'
         elif prcp > 1.0:
@@ -139,9 +156,23 @@ def classify_weather(d):
             weather = 'sun'
 
     # ------------------------------------------------------------------
-    # 2. Fog (sobrescreve 'sun'; não sobrescreve precipitação)
+    # 2. Cloudy (sobrescreve 'sun'; não sobrescreve precipitação nem fog)
+    #    Usa cloud_cover_max se disponível; caso contrário só cloud_mean.
     # ------------------------------------------------------------------
-    if weather == 'sun':
+    if weather == 'sun' and prcp < 0.3:
+        if cloud_max >= 0:
+            # com cloud_cover_max: exige média alta + pico alto
+            if cloud_mean >= 70 and cloud_max >= 80:
+                weather = 'cloudy'
+        else:
+            # sem cloud_cover_max: threshold mais conservador na média
+            if cloud_mean >= 75:
+                weather = 'cloudy'
+
+    # ------------------------------------------------------------------
+    # 3. Fog (sobrescreve 'sun' e 'cloudy'; não sobrescreve precipitação)
+    # ------------------------------------------------------------------
+    if weather in ('sun', 'cloudy'):
         dew_spread = temp_min - dew_mean
         if (dew_spread < 2.5
                 and rh_mean >= 88
@@ -150,7 +181,7 @@ def classify_weather(d):
             weather = 'fog'
 
     # ------------------------------------------------------------------
-    # 3. Thunder (sobrescreve 'rain')
+    # 4. Thunder (sobrescreve 'rain')
     # ------------------------------------------------------------------
     if weather == 'rain' or wmo_code in WMO_THUNDER:
         if wmo_code in WMO_THUNDER:
@@ -177,8 +208,9 @@ out_cols = [
     'snowfall', 'temp_range', 'month_sin', 'month_cos',
     'humidity_mean', 'humidity_min',
     'dew_point_mean', 'dew_point_max',
-    'cloud_cover_mean', 'pressure_mean', 'pressure_min',
-    'precipitation_hours', 
+    'cloud_cover_mean', 'cloud_cover_max', 'cloud_cover_min',
+    'pressure_mean', 'pressure_min',
+    'precipitation_hours',
     'weather',
 ]
 
@@ -203,6 +235,10 @@ for row in reader:
     tmax = safe_float(row.get('temperature_2m_max (°C)'))
     tmin = safe_float(row.get('temperature_2m_min (°C)'))
 
+    # cloud_cover_max / min: escritos como string vazia se a coluna não existir no CSV
+    raw_cloud_max = row.get('cloud_cover_max (%)', '').strip()
+    raw_cloud_min = row.get('cloud_cover_min (%)', '').strip()
+
     writer.writerow([
         date_str,
         safe_float(row.get('precipitation_sum (mm)')),
@@ -221,6 +257,8 @@ for row in reader:
         safe_float(row.get('dew_point_2m_mean (°C)')),
         safe_float(row.get('dew_point_2m_max (°C)')),
         safe_float(row.get('cloud_cover_mean (%)')),
+        raw_cloud_max if raw_cloud_max != '' else '',
+        raw_cloud_min if raw_cloud_min != '' else '',
         safe_float(row.get('pressure_msl_mean (hPa)')),
         safe_float(row.get('pressure_msl_min (hPa)')),
         safe_float(row.get('precipitation_hours (h)')),

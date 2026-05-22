@@ -72,7 +72,7 @@ function previsoes = ensemble_predict(XTeste, YTrain, sigTrain, bf, ...
 
         if diff_dr < 0.12 && (strcmp(pred_class,'drizzle') || strcmp(pred_class,'rain'))
             precip_i = XTeste(i, 1);
-            phr_i    = XTeste(i, 17);
+            phr_i    = XTeste(i, 19);   % precipitation_hours — era col 17, agora 19
             cloud_i  = XTeste(i, 14);
             hum_i    = XTeste(i, 12);
 

@@ -3,10 +3,12 @@ function tokens = extract_features(row, thr)
     sunshine     = row(4);
     wind_gusts   = row(7);
     humidity     = row(12);
-    cloud        = row(14);
-    press_mean   = row(15);
-    press_min    = row(16);
-    precip_hours = row(17);
+    cloud        = row(14);   % cloud_cover_mean
+    cloud_max    = row(15);   % cloud_cover_max  ← nova coluna
+    cloud_min    = row(16);   % cloud_cover_min  ← nova coluna
+    press_mean   = row(17);   % era row(15)
+    press_min    = row(18);   % era row(16)
+    precip_hours = row(19);   % era row(17)
     press_drop   = press_mean - press_min;
 
     % Precipitação
@@ -25,11 +27,18 @@ function tokens = extract_features(row, thr)
     else,                                   ph_tok = 'phr_persistent';
     end
 
-    % Cobertura de nuvens
+    % Cobertura de nuvens (média)
     if     cloud < thr.cloud_clear,         c_tok = 'cloud_clear';
     elseif cloud < thr.cloud_partial,       c_tok = 'cloud_partial';
     elseif cloud < thr.cloud_overcast,      c_tok = 'cloud_overcast';
     else,                                   c_tok = 'cloud_heavy';
+    end
+
+    % Pico de cobertura — distingue nublado persistente de passageiro
+    if     cloud_max > 90,                  cm_tok = 'cmax_full';
+    elseif cloud_max > 70,                  cm_tok = 'cmax_high';
+    elseif cloud_max > 40,                  cm_tok = 'cmax_mid';
+    else,                                   cm_tok = 'cmax_low';
     end
 
     % Humidade
@@ -52,15 +61,17 @@ function tokens = extract_features(row, thr)
     else,                                   w_tok = 'storm_likely';
     end
 
-    % Pressão — agora usa press_drop também
+    % Pressão
     if     press_mean > thr.press_high && press_drop < 3,   pr_tok = 'press_high';
     elseif press_min  < thr.press_drop || press_drop > 8,   pr_tok = 'press_storm';
     else,                                                    pr_tok = 'press_normal';
     end
 
-    % Combo — limiares dinâmicos + casos de fog
+    % Combo — limiares dinâmicos + casos de fog + cloudy
     if     precip == 0 && cloud < thr.cloud_clear && humidity < thr.hum_mid
                                                             combo = 'clear_sun';
+    elseif precip == 0 && cloud > thr.cloud_partial && cloud_max > 80
+                                                            combo = 'overcast_dry';   % cloudy territory
     elseif precip == 0 && humidity > thr.hum_drizzle && cloud > thr.cloud_partial
                                                             combo = 'dry_humid';      % fog territory
     elseif precip < thr.precip_trace && precip_hours < thr.phr_short
@@ -88,7 +99,8 @@ function tokens = extract_features(row, thr)
     t11 = strcat(p_tok,  '_', w_tok);    % precip + vento → separa thunder de rain
     t12 = strcat(h_tok,  '_', pr_tok);   % humidade + pressão → fog vs drizzle
     t13 = strcat(s_tok,  '_', h_tok);    % sunshine + humidade → fog vs sun
+    t14 = strcat(c_tok,  '_', cm_tok);   % cloud_mean × cloud_max → distingue cloudy
 
-    tokens = {p_tok, h_tok, c_tok, ph_tok, s_tok, combo, w_tok, pr_tok, ...
-              t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13};
+    tokens = {p_tok, h_tok, c_tok, ph_tok, s_tok, combo, w_tok, pr_tok, cm_tok, ...
+              t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14};
 end

@@ -10,7 +10,7 @@ addpath(fullfile(baseDir, 'minhash'));
 %% =========================
 % 1. LER DADOS CSV
 %% =========================
-data = readtable(fullfile(baseDir, 'data', 'seattle_new.csv'));
+data = readtable(fullfile(baseDir, 'data', 'beijing.csv'));
 
 % Remover colunas que não são features
 data.date         = [];   % identificador temporal — não usar
@@ -54,7 +54,7 @@ fprintf('XTrain — precipitação não-zero : %d/%d\n', ...
 bf = bloom_init(500000, 7);
 
 % Features a usar na chave: precip, precip_hours, cloud, humidity, temp_max, wind_gusts
-bf_cols   = [1, 17, 14, 12, 2, 7];
+bf_cols = [1, 19, 14, 12, 2, 7];
 bf_breaks = [2, 4, 10; ...   % precip:      0|<2|<4|<10|>=10
              3, 6, 12; ...   % precip_hours: 0|<3|<6|<12|>=12
              35,60, 80; ...  % cloud:       <35|<60|<80|>=80
