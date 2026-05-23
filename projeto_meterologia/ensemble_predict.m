@@ -47,10 +47,8 @@ function previsoes = ensemble_predict(XTeste, YTrain, sigTrain, bf, ...
         %% 4. Bloom Filter — ajuste de pesos por novidade
         key = build_bf_key(XTeste(i,:), bf_cols, bf_breaks);
         if bloom_check(bf, key)
-            % Amostra familiar: p_bf reforça o NB
             p_bf = p_nb;
         else
-            % Amostra nova: conservador, redistribuir pesos
             p_bf = ones(1, nClasses) / nClasses;
             w1 = max(w1 - 0.05, 0.30);
             w2 = min(w2 + 0.05, 0.65);
@@ -63,27 +61,35 @@ function previsoes = ensemble_predict(XTeste, YTrain, sigTrain, bf, ...
         [~, idx] = max(final_score);
         pred_class = classes{idx};
 
-        %% 6. Desempate drizzle/rain com limiares dinâmicos
+        %% 6. Desempate drizzle/rain COM DEPRESSÃO DO PONTO DE ORVALHO
         score_drizzle = final_score(strcmp(classes, 'drizzle'));
         score_rain = final_score(strcmp(classes, 'rain'));
         diff_dr = abs(score_drizzle - score_rain);
         
         if diff_dr < 0.12 && (strcmp(pred_class,'drizzle') || strcmp(pred_class,'rain'))
             precip_i = XTeste(i, 1);
-            phr_i = XTeste(i, 17);
-            cloud_i = XTeste(i, 14);
-            hum_i = XTeste(i, 12);
+            temp_i   = XTeste(i, 2);
+            hum_i    = XTeste(i, 12);
+            dew_i    = XTeste(i, 14);
+            cloud_i  = XTeste(i, 16);   
+            phr_i    = XTeste(i, 19);   
+            
+            % Calcula depressão do orvalho localmente para o desempate
+            dep_i = temp_i - dew_i;
         
-            % Normalizar pelo ponto de separação dinâmico em vez de divisores fixos
+            % Para rain: maior depressão ganha mais pontos (ar menos saturado)
             rain_score = (precip_i / thresholds.precip_low) * 2 + ...
                          (phr_i / thresholds.phr_short) * 2 + ...
                          (cloud_i / thresholds.cloud_overcast) + ...
-                         (hum_i / thresholds.hum_rain);
+                         (hum_i / thresholds.hum_rain) + ...
+                         (dep_i / 5); 
         
+            % Para drizzle: menor depressão ganha mais pontos (ar saturado)
             driz_score = ((thresholds.precip_low - precip_i) / thresholds.precip_low)  * 2 + ...
                          ((thresholds.phr_short - phr_i) / thresholds.phr_short)   * 2 + ...
                          ((thresholds.cloud_overcast - cloud_i) / thresholds.cloud_overcast)  + ...
-                         ((thresholds.hum_rain - hum_i) / thresholds.hum_rain);
+                         ((thresholds.hum_rain - hum_i) / thresholds.hum_rain) + ...
+                         (max(0, 5 - dep_i) / 5);
         
             if rain_score > driz_score * 1.15
                 pred_class = 'rain';
@@ -93,6 +99,5 @@ function previsoes = ensemble_predict(XTeste, YTrain, sigTrain, bf, ...
         end
 
         previsoes(i) = categorical({pred_class});
-
     end
 end
