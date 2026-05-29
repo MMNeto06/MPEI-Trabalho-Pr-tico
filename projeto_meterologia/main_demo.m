@@ -9,7 +9,24 @@ addpath(fullfile(baseDir, 'minhash'));
 tic; 
 
 % 1. LER DADOS 
-data = readtable(fullfile(baseDir, 'data', 'brasilia.csv'));
+data = readtable(fullfile(baseDir, 'data', 'aveiro.csv'));
+
+if ~isnumeric(data.cloud_cover_max)
+    data.cloud_cover_max = str2double(data.cloud_cover_max);  % NaN se vazio
+end
+
+% FIX Bug 1: cloud_cover_max e cloud_cover_min não estão disponíveis na fonte
+% Open-Meteo usada. Ficam sempre NaN, o que corrompe o Naive Bayes (todas as
+% log-verosimilhanças ficam NaN → max devolve índice 1 → 100% "cloudy").
+% Imputação conservadora: usar cloud_cover_mean como aproximação.
+nan_max = isnan(data.cloud_cover_max);
+nan_min = isnan(data.cloud_cover_min);
+if any(nan_max)
+    data.cloud_cover_max(nan_max) = data.cloud_cover_mean(nan_max);
+end
+if any(nan_min)
+    data.cloud_cover_min(nan_min) = data.cloud_cover_mean(nan_min);
+end
 
 % Remover colunas que não são features/obsoleto
 data.date = [];  
@@ -28,7 +45,7 @@ X = table2array(removevars(data, 'weather'));
 % TRANSFORMAÇÃO LOGARÍTMICA: Torna as variáveis de precipitação (1 e 19)
 % mais próximas de uma Gaussiana para o Naive Bayes.
 X(:,1) = log1p(X(:,1)); 
-X(:,19) = log1p(X(:,19));
+X(:,21) = log1p(X(:,21));  % FIX: col 21 = precipitation_hours; col 19 = pressure_mean (~1010 hPa)
 
 % 2. SPLIT TREINO / TESTE
 rng(42);
@@ -50,7 +67,10 @@ fprintf('\nTreino: %d amostras | Teste: %d amostras\n', size(XTrain,1), size(XTe
 bf = bloom_init(50000, 7);
 
 % Atualizar os índices
-bf_cols = [1, 19, 16, 12, 2, 7, 14];
+% FIX Bug bf_cols: índice 22 = temp_mean (errado) → corrigido para 21 = precipitation_hours
+% O comentário dizia 'precip_hours (log)' mas o índice apontava para temp_mean,
+% o que tornava a segunda dimensão do Bloom Filter inútil para filtrar dias de chuva.
+bf_cols = [1, 21, 16, 12, 2, 7, 14];
 % Breaks ajustados com log1p para bater certo com a transformação da matriz X
 bf_breaks = [log1p(2), log1p(4), log1p(10); ... % precip (log)
              log1p(3), log1p(6), log1p(12); ... % precip_hours (log)
