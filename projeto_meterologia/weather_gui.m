@@ -2,7 +2,9 @@ function weather_gui()
 % WEATHER_GUI  Interface gráfica para o classificador ensemble de tempo.
 %
 %   Previsão manual: selecionar CSV, treinar, introduzir features,
-%   obter previsão + precisão do modelo no conjunto de teste.
+%   obter previsão + métricas completas no conjunto de teste.
+%   Métricas: Exatidão, Precisão, Recall/TPR, F1, FPR, FNR,
+%             Matriz de Confusão.
 
     %% -----------------------------------------------------------------------
     %  FIGURA PRINCIPAL
@@ -40,7 +42,9 @@ function weather_gui()
     %% -----------------------------------------------------------------------
     mdl.ready=false; mdl.mu=[]; mdl.sigma=[]; mdl.logPrior=[];
     mdl.classes={}; mdl.sigTrain=[]; mdl.hashData=[]; mdl.YTrain=[];
-    mdl.bf=[]; mdl.thresholds=[]; mdl.acc_ens=0; mdl.acc_nb=0; mdl.f1_macro=0;
+    mdl.bf=[]; mdl.thresholds=[];
+    mdl.acc_ens=0; mdl.acc_nb=0; mdl.f1_macro=0;
+    mdl.fpr_macro=0; mdl.fnr_macro=0; mdl.tpr_macro=0; mdl.prec_macro=0;
 
     %% =======================================================================
     %%  PAINEL ESQUERDO — CSV + treino + log
@@ -163,12 +167,23 @@ function weather_gui()
 
     %% =======================================================================
     %%  PAINEL DIREITO — resultado
+    %%  Layout (y cresce para cima):
+    %%    705  Título
+    %%    620  Card "Classe prevista"                     (h=76)
+    %%    542  Linha 1 de cards: Acc Ens | Acc NB | F1   (h=68)
+    %%    468  Linha 2 de cards: FPR     | FNR    | TPR  (h=68)
+    %%    418  Botão Prever                               (h=44)
+    %%    392  Label gráfico
+    %%    228  Gráfico probabilidades NB                  (h=160)
+    %%    204  Label detalhes
+    %%     10  Área de texto detalhada                    (h=190)
     %% =======================================================================
     pT2R = uipanel(fig,'Position',[780 10 310 740],...
         'BackgroundColor',CLR_PANEL,'BorderType','none');
     uilabel(pT2R,'Text','RESULTADO DA PREVISÃO','Position',[10 705 290 26],...
         'FontSize',12,'FontWeight','bold','FontColor',CLR_ACCENT,...
         'BackgroundColor',CLR_PANEL,'HorizontalAlignment','left');
+
     % Card grande — classe prevista
     uipanel(pT2R,'Position',[10 620 290 76],...
         'BackgroundColor',[0.10 0.12 0.15],'BorderType','none');
@@ -177,27 +192,36 @@ function weather_gui()
     lblPredClass = uilabel(pT2R,'Text','—','Position',[14 628 282 46],...
         'FontSize',26,'FontWeight','bold','FontColor',CLR_TXT,...
         'BackgroundColor',[0.10 0.12 0.15],'HorizontalAlignment','center');
-    % Cards de precisão
+
+    % Linha 1: Exatidão Ensemble | Exatidão NB | F1 Macro
     lblPredAccEns = makeCard(pT2R, 10,542,'Acc. Ensemble (teste)');
     lblPredAccNB  = makeCard(pT2R,126,542,'Acc. NB (teste)');
     lblPredF1     = makeCard(pT2R,242,542,'F1 Macro (teste)');
+
+    % Linha 2: FPR Macro | FNR Macro | TPR Macro
+    lblPredFPR    = makeCard(pT2R, 10,468,'FPR Macro (teste)');
+    lblPredFNR    = makeCard(pT2R,126,468,'FNR Macro (teste)');
+    lblPredTPR    = makeCard(pT2R,242,468,'TPR Macro (teste)');
+
     % Botão Prever
     btnPredict = uibutton(pT2R,'push','Text','🔍  Prever',...  %#ok<NASGU>
-        'Position',[10 492 290 44],...
+        'Position',[10 418 290 44],...
         'BackgroundColor',CLR_BTN,'FontColor',CLR_BTN_TXT,...
         'FontSize',14,'FontWeight','bold',...
         'ButtonPushedFcn',@(~,~)predictSingle());
+
     % Gráfico probabilidades NB
     uilabel(pT2R,'Text','Probabilidades por classe (Naive Bayes):',...
-        'Position',[10 464 290 22],'FontSize',10,...
+        'Position',[10 392 290 22],'FontSize',10,...
         'FontColor',CLR_ACCENT,'BackgroundColor',CLR_PANEL);
-    axProb = uiaxes(pT2R,'Position',[10 286 290 174],...
+    axProb = uiaxes(pT2R,'Position',[10 228 290 160],...
         'Color',[0.10 0.12 0.15],'XColor',CLR_TXT,'YColor',CLR_TXT);
     axProb.FontSize = 9;
+
     % Área de texto detalhada
-    uilabel(pT2R,'Text','Detalhes:','Position',[10 260 290 22],'FontSize',10,...
+    uilabel(pT2R,'Text','Detalhes:','Position',[10 204 290 22],'FontSize',10,...
         'FontColor',CLR_ACCENT,'BackgroundColor',CLR_PANEL);
-    taResult = uitextarea(pT2R,'Position',[10 10 290 246],...
+    taResult = uitextarea(pT2R,'Position',[10 10 290 190],...
         'Value','Treine o modelo e prima Prever.',...
         'FontSize',9,'FontName','Courier New',...
         'BackgroundColor',[0.07 0.09 0.11],'FontColor',[0.75 0.90 0.75],'Editable','off');
@@ -271,7 +295,7 @@ function weather_gui()
             if nTr2 == size(X2,1)
                 XTr2=X2(idxP2,:); YTr2=Y2(idxP2);
                 XTe2=XTr2;        YTe2=YTr2;
-                logT2('  Treino: %d  Teste: %d (Aviso: Rácio 100%% - Testado no conjunto de Treino)',size(XTr2,1),size(XTe2,1));
+                logT2('  Treino: %d  Teste: %d (Aviso: 100%% - testado no treino)',size(XTr2,1),size(XTe2,1));
             else
                 XTr2=X2(idxP2(1:nTr2),:);     YTr2=Y2(idxP2(1:nTr2));
                 XTe2=X2(idxP2(nTr2+1:end),:); YTe2=Y2(idxP2(nTr2+1:end));
@@ -303,28 +327,92 @@ function weather_gui()
             [~,pNB2]=nb_predict(XTe2,mu2,sigma2,logPr2,cls2);
             [~,iNB2]=max(pNB2,[],2);
             acc_nb2=mean(categorical(cls2(iNB2))==YTe2);
-            nC2=numel(cls2); f1s2=zeros(nC2,1);
+
+            %% --- Métricas por classe: Precision, Recall/TPR, F1, FPR, FNR ---
+            nC2=numel(cls2); nTe2=numel(YTe2);
+            f1s2=zeros(nC2,1); fprs2=zeros(nC2,1); fnrs2=zeros(nC2,1);
+            tprs2=zeros(nC2,1); precs2=zeros(nC2,1);
             for c=1:nC2
                 tp2=sum(prev2==cls2{c}&YTe2==cls2{c});
                 fp2=sum(prev2==cls2{c}&YTe2~=cls2{c});
                 fn2=sum(prev2~=cls2{c}&YTe2==cls2{c});
-                p2=tp2/max(tp2+fp2,1); r2=tp2/max(tp2+fn2,1);
-                f1s2(c)=2*p2*r2/max(p2+r2,1e-9);
+                tn2=nTe2-tp2-fp2-fn2;
+                p2 =tp2/max(tp2+fp2,1);
+                r2 =tp2/max(tp2+fn2,1);           % Recall = TPR
+                f1s2(c) =2*p2*r2/max(p2+r2,1e-9);
+                fprs2(c)=fp2/max(fp2+tn2,1);       % FPR = FP/(FP+TN)
+                fnrs2(c)=fn2/max(fn2+tp2,1);        % FNR = FN/(FN+TP)
+                tprs2(c)=r2;                         % TPR = Recall
+                precs2(c)=p2;
             end
-            f1mac2=mean(f1s2);
-            logT2(''); logT2('=== PRECISÃO NO TESTE ===');
-            logT2('  Acc Ensemble : %.2f%%',acc_ens2*100);
-            logT2('  Acc NB       : %.2f%%',acc_nb2*100);
-            logT2('  F1 Macro     : %.2f%%',f1mac2*100);
+            f1mac2   =mean(f1s2);
+            fpr_mac2 =mean(fprs2);
+            fnr_mac2 =mean(fnrs2);
+            tpr_mac2 =mean(tprs2);
+            prec_mac2=mean(precs2);
+
+            %% --- Log: tabela de avaliação completa ---
+            logT2(''); logT2('=== AVALIAÇÃO NO CONJUNTO DE TESTE ===');
+            logT2('  Exatidão (Ensemble) : %.2f%%', acc_ens2*100);
+            logT2('  Exatidão (NB)       : %.2f%%', acc_nb2*100);
+            logT2('');
+            logT2('%-10s %8s %8s %6s %8s %8s', ...
+                'Classe','Prec','TPR/Rec','F1','FPR','FNR');
+            logT2('%s', repmat('-',1,55));
+            for c=1:nC2
+                logT2('%-10s %7.2f%% %7.2f%% %5.2f%% %7.2f%% %7.2f%%', ...
+                    cls2{c}, precs2(c)*100, tprs2(c)*100, f1s2(c)*100, ...
+                    fprs2(c)*100, fnrs2(c)*100);
+            end
+            logT2('%s', repmat('-',1,55));
+            logT2('%-10s %7.2f%% %7.2f%% %5.2f%% %7.2f%% %7.2f%%', ...
+                'Macro', prec_mac2*100, tpr_mac2*100, f1mac2*100, ...
+                fpr_mac2*100, fnr_mac2*100);
+            logT2('');
+            logT2('  TPR=Recall | FPR=FP/(FP+TN) | FNR=FN/(FN+TP)');
+
+            %% --- Log: Matriz de Confusão (texto) ---
+            logT2('');
+            logT2('--- Matriz de Confusão ---');
+            confMat2=confusionmat(YTe2,prev2,'Order',cls2);
+            hdr=sprintf('%12s','');
+            for c=1:nC2, hdr=[hdr sprintf('%10s',cls2{c})]; end %#ok<AGROW>
+            logT2('%s  <- Previsto', hdr);
+            logT2('%s', repmat('-',1,12+nC2*10+14));
+            for c=1:nC2
+                rowStr=sprintf('%-12s',cls2{c});
+                for k=1:nC2, rowStr=[rowStr sprintf('%10d',confMat2(c,k))]; end %#ok<AGROW>
+                logT2('%s', rowStr);
+            end
+            logT2('^ Real');
             logT2(''); logT2('Modelo pronto. Prima Prever.');
+
+            %% --- Mostrar matriz de confusão visual numa nova figura ---
+            try
+                figure('Name','Matriz de Confusão — Ensemble');
+                cm2=confusionchart(YTe2,prev2,...
+                    'RowSummary','row-normalized',...
+                    'ColumnSummary','column-normalized',...
+                    'Title','Ensemble — Matriz de Confusão');
+                cm2.ClassLabels=cls2;
+            catch
+            end
+
+            %% --- Guardar modelo e actualizar cards ---
             mdl.mu=mu2; mdl.sigma=sigma2; mdl.logPrior=logPr2;
             mdl.classes=cls2; mdl.sigTrain=sig2; mdl.hashData=hd2;
             mdl.YTrain=YTr2; mdl.bf=bf2; mdl.thresholds=thr2;
-            mdl.acc_ens=acc_ens2; mdl.acc_nb=acc_nb2; mdl.f1_macro=f1mac2;
+            mdl.acc_ens=acc_ens2;   mdl.acc_nb=acc_nb2;   mdl.f1_macro=f1mac2;
+            mdl.fpr_macro=fpr_mac2; mdl.fnr_macro=fnr_mac2;
+            mdl.tpr_macro=tpr_mac2; mdl.prec_macro=prec_mac2;
             mdl.ready=true;
+
             set(lblPredAccEns,'Text',sprintf('%.2f%%',acc_ens2*100),'FontColor',CLR_OK);
             set(lblPredAccNB, 'Text',sprintf('%.2f%%',acc_nb2*100), 'FontColor',CLR_TXT);
             set(lblPredF1,    'Text',sprintf('%.2f%%',f1mac2*100),  'FontColor',CLR_ACCENT);
+            set(lblPredFPR,   'Text',sprintf('%.2f%%',fpr_mac2*100),'FontColor',CLR_WARN);
+            set(lblPredFNR,   'Text',sprintf('%.2f%%',fnr_mac2*100),'FontColor',CLR_WARN);
+            set(lblPredTPR,   'Text',sprintf('%.2f%%',tpr_mac2*100),'FontColor',CLR_OK);
             setProgressT2(1.0);
             lblStatusT2.Text='● Modelo pronto'; lblStatusT2.FontColor=CLR_OK;
         catch ME
@@ -418,10 +506,15 @@ function weather_gui()
                 lines{end+1}=sprintf('  %-12s %6.2f%%%s',mdl.classes{ci},pNB(ci)*100,mk);
             end
             lines{end+1}='';
-            lines{end+1}='--- Precisão do modelo (conjunto de teste) ---';
-            lines{end+1}=sprintf('  Accuracy Ensemble : %.2f%%',mdl.acc_ens*100);
-            lines{end+1}=sprintf('  Accuracy NB       : %.2f%%',mdl.acc_nb*100);
+            lines{end+1}='--- Métricas do modelo (conjunto de teste) ---';
+            lines{end+1}=sprintf('  Exatidão Ensemble : %.2f%%',mdl.acc_ens*100);
+            lines{end+1}=sprintf('  Exatidão NB       : %.2f%%',mdl.acc_nb*100);
+            lines{end+1}=sprintf('  Precisão Macro    : %.2f%%',mdl.prec_macro*100);
+            lines{end+1}=sprintf('  TPR Macro         : %.2f%%',mdl.tpr_macro*100);
             lines{end+1}=sprintf('  F1 Macro          : %.2f%%',mdl.f1_macro*100);
+            lines{end+1}=sprintf('  FPR Macro         : %.2f%%',mdl.fpr_macro*100);
+            lines{end+1}=sprintf('  FNR Macro         : %.2f%%',mdl.fnr_macro*100);
+            lines{end+1}='  (ver log de treino para tabela por classe)';
             lines{end+1}='';
             lines{end+1}='--- Valores introduzidos ---';
             for fi2=1:nFeat

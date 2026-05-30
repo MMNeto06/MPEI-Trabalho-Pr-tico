@@ -2,7 +2,7 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf, bf_cols, bf_breaks)
     nClasses = numel(classes);
     nTeste = numel(YTeste);
 
-    %% 1) Bloom Filter 
+    %% 1) Bloom Filter
     fprintf('=== Bloom Filter: Dias de Teste vs Histórico ===\n');
     nNaoVisto = 0;
     for i = 1:nTeste
@@ -16,55 +16,74 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf, bf_cols, bf_breaks)
     fprintf('  Dias definitivamente novos          : %d / %d\n', nNaoVisto, nTeste);
     fprintf('  FPR estimada do filtro              : %.4f%%\n\n', bloom_fp_rate(bf) * 100);
 
-    %% 2) Precisão global
-    precisao = mean(previsoes == YTeste);
-    fprintf('Precisão global: %.4f  (%.2f%%)\n', precisao, precisao * 100);
+    %% 2) Exatidão global (Accuracy)
+    exatidao = mean(previsoes == YTeste);
+    fprintf('Exatidão global: %.4f  (%.2f%%)\n', exatidao, exatidao * 100);
 
-    %% 3) Precision, Recall e F1 por classe
-    fprintf('\n%-12s  %9s  %9s  %9s  %6s\n', 'Classe', 'Precision', 'Recall', 'F1-Score', 'Suporte');
-    fprintf('%s\n', repmat('-', 1, 55));
+    %% 3) Precision, Recall/TPR, F1, FPR, FNR por classe
+    %   TPR = Taxa de Verdadeiros Positivos = Recall = TP / (TP + FN)
+    %   FPR = Taxa de Falsos Positivos      = FP / (FP + TN)
+    %   FNR = Taxa de Falsos Negativos      = FN / (FN + TP)  [= 1 - TPR]
+    fprintf('\n%-12s  %9s  %10s  %9s  %9s  %9s  %6s\n', ...
+        'Classe', 'Precision', 'Recall/TPR', 'F1-Score', 'FPR', 'FNR', 'Suporte');
+    fprintf('%s\n', repmat('-', 1, 76));
 
     precisoes = zeros(nClasses, 1);
-    recalls = zeros(nClasses, 1);
-    f1scores = zeros(nClasses, 1);
-    suportes = zeros(nClasses, 1);
+    recalls   = zeros(nClasses, 1);
+    f1scores  = zeros(nClasses, 1);
+    fprs      = zeros(nClasses, 1);
+    fnrs      = zeros(nClasses, 1);
+    suportes  = zeros(nClasses, 1);
 
     for c = 1:nClasses
         tp = sum(previsoes == classes{c} & YTeste == classes{c});
         fp = sum(previsoes == classes{c} & YTeste ~= classes{c});
         fn = sum(previsoes ~= classes{c} & YTeste == classes{c});
+        tn = nTeste - tp - fp - fn;
 
-        p = tp / max(tp + fp, 1);
-        r = tp / max(tp + fn, 1);
-        f1 = 2 * p * r / max(p + r, 1e-9);
+        p   = tp / max(tp + fp, 1);           % Precisão (Precision)
+        r   = tp / max(tp + fn, 1);           % Recall = TPR
+        f1  = 2 * p * r / max(p + r, 1e-9);  % F1-Score
+        fpr = fp / max(fp + tn, 1);           % Taxa de Falsos Positivos
+        fnr = fn / max(fn + tp, 1);           % Taxa de Falsos Negativos
 
         precisoes(c) = p;
-        recalls(c) = r;
-        f1scores(c) = f1;
-        suportes(c) = sum(YTeste == classes{c});
+        recalls(c)   = r;
+        f1scores(c)  = f1;
+        fprs(c)      = fpr;
+        fnrs(c)      = fnr;
+        suportes(c)  = sum(YTeste == classes{c});
 
-        fprintf('%-12s  %9.4f  %9.4f  %9.4f  %6d\n', classes{c}, p, r, f1, suportes(c));
+        fprintf('%-12s  %9.4f  %10.4f  %9.4f  %9.4f  %9.4f  %6d\n', ...
+            classes{c}, p, r, f1, fpr, fnr, suportes(c));
     end
 
-    fprintf('%s\n', repmat('-', 1, 55));
+    fprintf('%s\n', repmat('-', 1, 76));
 
     % Macro-average (não ponderada)
-    fprintf('%-12s  %9.4f  %9.4f  %9.4f  %6d\n', ...
-        'Macro avg', mean(precisoes), mean(recalls), mean(f1scores), nTeste);
-
-    % Weighted average (ponderada pelo suporte)
-    fprintf('%-12s  %9.4f  %9.4f  %9.4f  %6d\n', ...
-        'Weighted avg', ...
-        sum(precisoes .* suportes) / nTeste, ...
-        sum(recalls .* suportes) / nTeste, ...
-        sum(f1scores .* suportes) / nTeste, ...
+    fprintf('%-12s  %9.4f  %10.4f  %9.4f  %9.4f  %9.4f  %6d\n', ...
+        'Macro avg', ...
+        mean(precisoes), mean(recalls), mean(f1scores), mean(fprs), mean(fnrs), ...
         nTeste);
 
-    %% 4) Matriz de confusão 
+    % Weighted average (ponderada pelo suporte)
+    fprintf('%-12s  %9.4f  %10.4f  %9.4f  %9.4f  %9.4f  %6d\n', ...
+        'Weighted avg', ...
+        sum(precisoes .* suportes) / nTeste, ...
+        sum(recalls   .* suportes) / nTeste, ...
+        sum(f1scores  .* suportes) / nTeste, ...
+        sum(fprs      .* suportes) / nTeste, ...
+        sum(fnrs      .* suportes) / nTeste, ...
+        nTeste);
+
+    fprintf('\n  Recall = TPR (Taxa de Verdadeiros Positivos) = TP / (TP + FN)\n');
+    fprintf('  FPR    = Taxa de Falsos Positivos            = FP / (FP + TN)\n');
+    fprintf('  FNR    = Taxa de Falsos Negativos            = FN / (FN + TP)\n');
+
+    %% 4) Matriz de confusão (texto)
     fprintf('\n--- Matriz de Confusão ---\n');
     confMatrix = confusionmat(YTeste, previsoes, 'Order', classes);
 
-    % Cabeçalho
     fprintf('%12s', '');
     for c = 1:nClasses
         fprintf('%10s', classes{c});
@@ -81,13 +100,13 @@ function evaluate(YTeste, previsoes, classes, XTeste, bf, bf_cols, bf_breaks)
     end
     fprintf('^ Real\n');
 
-    % 5) Matriz de confusão visual 
+    %% 5) Matriz de confusão visual
     try
         figure('Name', 'Matriz de Confusão');
         cm = confusionchart(YTeste, previsoes, ...
-            'RowSummary', 'row-normalized', ...
+            'RowSummary',    'row-normalized', ...
             'ColumnSummary', 'column-normalized', ...
-            'Title', 'Naive Bayes Gaussiano');
+            'Title',         'Ensemble — Matriz de Confusão');
         cm.ClassLabels = classes;
     catch
     end
