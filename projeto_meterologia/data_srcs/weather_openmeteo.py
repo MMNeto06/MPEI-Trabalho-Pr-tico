@@ -1,3 +1,11 @@
+"""
+Este script é utilizado originalmente para converter os CSVS do Open Meteo para uns simplificados 
+e com as categorias que precisavamos.
+Há um programa matlab nesta mesma pasta que faz o mesmo, mas que tem por base este script, 
+obtido online devido a um dataset antigo e adaptado às nossas necessidades
+Source do original: https://github.com/vega/vega-datasets/blob/master/scripts/weather.py
+"""
+
 import sys
 import csv
 import datetime
