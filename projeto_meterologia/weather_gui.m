@@ -1,14 +1,4 @@
 function weather_gui()
-% WEATHER_GUI  Interface gráfica para o classificador ensemble de tempo.
-%
-%   Previsão manual: selecionar CSV, treinar, introduzir features,
-%   obter previsão + métricas completas no conjunto de teste.
-%   Métricas: Exatidão, Precisão, Recall/TPR, F1, FPR, FNR,
-%             Matriz de Confusão.
-
-    %% -----------------------------------------------------------------------
-    %  FIGURA PRINCIPAL
-    %% -----------------------------------------------------------------------
     fig = uifigure('Name', 'Ensemble Weather Classifier', ...
                    'Position', [100 60 1100 780], ...
                    'Color',    [0.13 0.15 0.18], ...
@@ -25,9 +15,6 @@ function weather_gui()
     BF_BREAKS = [2, 4, 10; 3, 6, 12; 35,60,80; 55,70,82; 10,18,25; 25,40,55];
     slH = 22;
 
-    %% -----------------------------------------------------------------------
-    %  HELPER — card de métrica (reutilizado no painel de resultado)
-    %% -----------------------------------------------------------------------
     function lv = makeCard(par,x,yc,ttl)
         uipanel(par,'Position',[x yc 106 68],'BackgroundColor',[0.10 0.12 0.15],'BorderType','none');
         uilabel(par,'Text',ttl,'Position',[x+4 yc+46 98 18],'FontSize',8,...
@@ -37,18 +24,13 @@ function weather_gui()
             'BackgroundColor',[0.10 0.12 0.15],'HorizontalAlignment','center');
     end
 
-    %% -----------------------------------------------------------------------
-    %  STRUCT DO MODELO
-    %% -----------------------------------------------------------------------
     mdl.ready=false; mdl.mu=[]; mdl.sigma=[]; mdl.logPrior=[];
     mdl.classes={}; mdl.sigTrain=[]; mdl.hashData=[]; mdl.YTrain=[];
     mdl.bf=[]; mdl.thresholds=[];
     mdl.acc_ens=0; mdl.acc_nb=0; mdl.f1_macro=0;
     mdl.fpr_macro=0; mdl.fnr_macro=0; mdl.tpr_macro=0; mdl.prec_macro=0;
 
-    %% =======================================================================
-    %%  PAINEL ESQUERDO — CSV + treino + log
-    %% =======================================================================
+    % Painel Esquerdo
     pT2L = uipanel(fig,'Position',[10 10 310 740],...
         'BackgroundColor',CLR_PANEL,'BorderType','none');
     uilabel(pT2L,'Text','DADOS DE TREINO','Position',[10 705 290 26],...
@@ -99,9 +81,7 @@ function weather_gui()
         'FontSize',8,'FontName','Courier New',...
         'BackgroundColor',[0.07 0.09 0.11],'FontColor',[0.75 0.90 0.75],'Editable','off');
 
-    %% =======================================================================
-    %%  PAINEL CENTRAL — inputs das features
-    %% =======================================================================
+    % Painel Central
     pT2M = uipanel(fig,'Position',[330 10 440 740],...
         'BackgroundColor',CLR_PANEL,'BorderType','none');
     uilabel(pT2M,'Text','VALORES DA AMOSTRA','Position',[10 705 420 26],...
@@ -111,25 +91,22 @@ function weather_gui()
         'Position',[10 684 420 18],'FontSize',9,...
         'FontColor',[0.55 0.65 0.75],'BackgroundColor',CLR_PANEL);
 
-    % {nome, unidade, min, max, default}
-    % month_sin, month_cos, temp_mean, season_temp e cos_x_tmax
-    % são calculados automaticamente em background.
     featureDefs = {
-        'precipitation',       'mm',    0,   500,   2.0    % máx diário extremo (~1825mm Réunion 2007)
-        'temp_max',            'C',   -50,    55,  18.0    % -50 Sibéria / +54 Death Valley
-        'temp_min',            'C',   -55,    45,   8.0    % -55 Yakutsk / +45 extremos secos
-        'sunshine_duration',   'h',     0,    24,   5.0    % 0–24 h
-        'shortwave_radiation', 'MJ',    0,    45,  10.0    % ~40–42 MJ/m² em dias solsticiais equatoriais
-        'wind_speed_max',      'km/h',  0,   250,  20.0    % acima de 220 já é furacão cat-5
-        'wind_gusts_max',      'km/h',  0,   400,  35.0    % récord mundial ~407 km/h (Barrow Is. 1996)
-        'snowfall',            'cm',    0,   200,   0.0    % >150 cm em tempestades extremas
-        'month',               '',      1,    12,   1.0
-        'humidity_mean',       '%',     0,   100,  75.0
-        'humidity_min',        '%',     0,   100,  55.0
-        'cloud_cover_mean',    '%',     0,   100,  40.0
-        'pressure_mean',       'hPa', 860,  1090, 1015.0   % récord mín ~870 hPa (tufão); máx ~1084 hPa
-        'pressure_min',        'hPa', 850,  1090, 1013.0
-        'precipitation_hours', 'h',     0,    24,   2.0
+        'precipitation', 'mm', 0, 500, 2.0
+        'temp_max', 'C', -50, 55, 18.0    
+        'temp_min', 'C', -55, 45, 8.0  
+        'sunshine_duration', 'h', 0, 24, 5.0    
+        'shortwave_radiation', 'MJ', 0, 45, 10.0 
+        'wind_speed_max', 'km/h', 0, 250, 20.0    
+        'wind_gusts_max', 'km/h', 0, 400, 35.0   
+        'snowfall', 'cm', 0, 200, 0.0    
+        'month', '', 1, 12, 1.0
+        'humidity_mean', '%', 0, 100, 75.0
+        'humidity_min', '%', 0, 100, 55.0
+        'cloud_cover_mean', '%', 0, 100, 40.0
+        'pressure_mean', 'hPa', 860, 1090, 1015.0 
+        'pressure_min', 'hPa', 850, 1090, 1013.0
+        'precipitation_hours', 'h', 0, 24, 2.0
     };
     nFeat       = size(featureDefs,1);
     featEdits   = cell(nFeat,1);
@@ -165,19 +142,7 @@ function weather_gui()
         ed_i.ValueChangedFcn = @(e,~) set(sl_i,'Value',max(fmin,min(fmax,e.Value)));
     end
 
-    %% =======================================================================
-    %%  PAINEL DIREITO — resultado
-    %%  Layout (y cresce para cima):
-    %%    705  Título
-    %%    620  Card "Classe prevista"                     (h=76)
-    %%    542  Linha 1 de cards: Acc Ens | Acc NB | F1   (h=68)
-    %%    468  Linha 2 de cards: FPR     | FNR    | TPR  (h=68)
-    %%    418  Botão Prever                               (h=44)
-    %%    392  Label gráfico
-    %%    228  Gráfico probabilidades NB                  (h=160)
-    %%    204  Label detalhes
-    %%     10  Área de texto detalhada                    (h=190)
-    %% =======================================================================
+    % Painel Direito
     pT2R = uipanel(fig,'Position',[780 10 310 740],...
         'BackgroundColor',CLR_PANEL,'BorderType','none');
     uilabel(pT2R,'Text','RESULTADO DA PREVISÃO','Position',[10 705 290 26],...
@@ -203,8 +168,7 @@ function weather_gui()
     lblPredFNR    = makeCard(pT2R,126,468,'FNR Macro (teste)');
     lblPredTPR    = makeCard(pT2R,242,468,'TPR Macro (teste)');
 
-    % Botão Prever
-    btnPredict = uibutton(pT2R,'push','Text','🔍  Prever',...  %#ok<NASGU>
+    btnPredict = uibutton(pT2R,'push','Text','🔍  Prever',...  
         'Position',[10 418 290 44],...
         'BackgroundColor',CLR_BTN,'FontColor',CLR_BTN_TXT,...
         'FontSize',14,'FontWeight','bold',...
@@ -226,9 +190,7 @@ function weather_gui()
         'FontSize',9,'FontName','Courier New',...
         'BackgroundColor',[0.07 0.09 0.11],'FontColor',[0.75 0.90 0.75],'Editable','off');
 
-    %% =======================================================================
-    %%  CALLBACKS
-    %% =======================================================================
+    % CallBacks
     function pickBaseDirT2()
         d=uigetdir(edBaseDirT2.Value,'Seleccionar pasta');
         if d~=0, edBaseDirT2.Value=d; end
@@ -254,9 +216,7 @@ function weather_gui()
         pbFgT2.Position(3)=max(1,round(val*290)); drawnow;
     end
 
-    %% =======================================================================
-    %%  TREINAR MODELO
-    %% =======================================================================
+    % Treinar Modelo
     function trainModelT2()
         btnTrain.Enable='off'; mdl.ready=false;
         set(taLogT2,'Value',''); setProgressT2(0);
@@ -291,7 +251,6 @@ function weather_gui()
             rng('shuffle');
             idxP2=randperm(size(X2,1)); nTr2=round(trainRatio2*numel(idxP2));
 
-            % Tratamento especial se rácio for 100%
             if nTr2 == size(X2,1)
                 XTr2=X2(idxP2,:); YTr2=Y2(idxP2);
                 XTe2=XTr2;        YTe2=YTr2;
@@ -307,28 +266,27 @@ function weather_gui()
             setProgressT2(0.30);
             logT2('Bloom Filter...');
             bf2=bloom_init(50000,7);
-            for ii=1:size(XTr2,1)
-                key=build_bf_key(XTr2(ii,:),BF_COLS,BF_BREAKS);
-                bf2=bloom_insert(bf2,key);
+            keysTrain = build_bf_key(XTr2, BF_COLS, BF_BREAKS);
+            for ii=1:length(keysTrain)
+                bf2=bloom_insert(bf2, keysTrain(ii));
             end
             setProgressT2(0.45);
             logT2('MinHash (200 hashes)...');
             tTok2=cell(size(XTr2,1),1);
-            for ii=1:size(XTr2,1), tTok2{ii}=extract_features(XTr2(ii,:),thr2); end
-            [sig2,hd2]=minhash_signature(tTok2,200);
+            trainTokens = extract_features(XTr2, thr2);
+            [sig2, hd2] = minhash_signature(trainTokens, 200);
             setProgressT2(0.65);
             logT2('Naive Bayes...');
             [mu2,sigma2,logPr2,cls2]=nb_train(XTr2,YTr2);
             setProgressT2(0.80);
             logT2('A avaliar...');
             prev2=ensemble_predict(XTe2,YTr2,sig2,bf2,...
-                mu2,sigma2,logPr2,cls2,hd2,0.55,0.40,0.05,BF_COLS,BF_BREAKS,thr2);
+                mu2,sigma2,logPr2,cls2,hd2,BF_COLS,BF_BREAKS,thr2);
             acc_ens2=mean(prev2==YTe2);
             [~,pNB2]=nb_predict(XTe2,mu2,sigma2,logPr2,cls2);
             [~,iNB2]=max(pNB2,[],2);
             acc_nb2=mean(categorical(cls2(iNB2))==YTe2);
 
-            %% --- Métricas por classe: Precision, Recall/TPR, F1, FPR, FNR ---
             nC2=numel(cls2); nTe2=numel(YTe2);
             f1s2=zeros(nC2,1); fprs2=zeros(nC2,1); fnrs2=zeros(nC2,1);
             tprs2=zeros(nC2,1); precs2=zeros(nC2,1);
@@ -351,7 +309,6 @@ function weather_gui()
             tpr_mac2 =mean(tprs2);
             prec_mac2=mean(precs2);
 
-            %% --- Log: tabela de avaliação completa ---
             logT2(''); logT2('=== AVALIAÇÃO NO CONJUNTO DE TESTE ===');
             logT2('  Exatidão (Ensemble) : %.2f%%', acc_ens2*100);
             logT2('  Exatidão (NB)       : %.2f%%', acc_nb2*100);
@@ -371,7 +328,6 @@ function weather_gui()
             logT2('');
             logT2('  TPR=Recall | FPR=FP/(FP+TN) | FNR=FN/(FN+TP)');
 
-            %% --- Log: Matriz de Confusão (texto) ---
             logT2('');
             logT2('--- Matriz de Confusão ---');
             confMat2=confusionmat(YTe2,prev2,'Order',cls2);
@@ -387,7 +343,6 @@ function weather_gui()
             logT2('^ Real');
             logT2(''); logT2('Modelo pronto. Prima Prever.');
 
-            %% --- Mostrar matriz de confusão visual numa nova figura ---
             try
                 figure('Name','Matriz de Confusão — Ensemble');
                 cm2=confusionchart(YTe2,prev2,...
@@ -398,7 +353,6 @@ function weather_gui()
             catch
             end
 
-            %% --- Guardar modelo e actualizar cards ---
             mdl.mu=mu2; mdl.sigma=sigma2; mdl.logPrior=logPr2;
             mdl.classes=cls2; mdl.sigTrain=sig2; mdl.hashData=hd2;
             mdl.YTrain=YTr2; mdl.bf=bf2; mdl.thresholds=thr2;
@@ -425,25 +379,20 @@ function weather_gui()
         pbBgT2.Visible='off'; btnTrain.Enable='on';
     end
 
-    %% =======================================================================
-    %%  PREVER AMOSTRA ÚNICA
-    %% =======================================================================
+    % Prever Amostra Única
     function predictSingle()
         if ~mdl.ready
             taResult.Value={'Modelo não treinado.','Prima "Treinar Modelo" primeiro.'};
             return;
         end
 
-        % 1. Ler os valores introduzidos na UI (15 features visíveis)
         raw = zeros(1, nFeat);
         for fi=1:nFeat, raw(fi)=featEdits{fi}.Value; end
 
-        % 2. Extrair variáveis-chave
         tmax = raw(2);
         tmin = raw(3);
         m    = raw(9);
 
-        % 3. Calcular features derivadas em background
         trange    = tmax - tmin;
         m_sin     = sin(2 * pi * m / 12);
         m_cos     = cos(2 * pi * m / 12);
@@ -451,7 +400,6 @@ function weather_gui()
         seas_temp = tmean * m_cos;
         c_x_tmax  = m_cos * tmax;
 
-        % 4. Reconstruir o array de 20 posições para o modelo
         row = zeros(1, 20);
         row(1:8)   = raw(1:8);       % precipitation → snowfall
         row(9)     = trange;         % temp_range
@@ -465,12 +413,11 @@ function weather_gui()
         try
             prev=ensemble_predict(row,mdl.YTrain,mdl.sigTrain,mdl.bf,...
                 mdl.mu,mdl.sigma,mdl.logPrior,mdl.classes,mdl.hashData,...
-                0.55,0.40,0.05,BF_COLS,BF_BREAKS,mdl.thresholds);
+                BF_COLS,BF_BREAKS,mdl.thresholds);
             predStr=char(prev);
 
-            [~,logNB]=nb_predict(row,mdl.mu,mdl.sigma,mdl.logPrior,mdl.classes);
-            logNB=logNB(:)'-max(logNB(:));
-            pNB=exp(logNB)/sum(exp(logNB));
+            [~, pNB] = nb_predict(row, mdl.mu, mdl.sigma, mdl.logPrior, mdl.classes);
+            pNB = pNB(:)';
 
             lblPredClass.Text=upper(predStr);
             switch predStr
@@ -482,7 +429,6 @@ function weather_gui()
                 otherwise,      lblPredClass.FontColor=CLR_TXT;
             end
 
-            % Barras de probabilidade
             cla(axProb);
             nC=numel(mdl.classes);
             bClr=repmat([0.22 0.60 0.86],nC,1);
@@ -496,7 +442,6 @@ function weather_gui()
             title(axProb,'Probabilidades NB','FontSize',9,'Color',CLR_TXT);
             ylim(axProb,[0 100]);
 
-            % Texto detalhado
             lines={'=== PREVISÃO DETALHADA ===',''};
             lines{end+1}=sprintf('Classe prevista : %s',predStr);
             lines{end+1}='';
@@ -535,9 +480,6 @@ function weather_gui()
         end
     end
 
-    %% -----------------------------------------------------------------------
-    %  UTILITÁRIO
-    %% -----------------------------------------------------------------------
     function res = isAbsolutePath(p)
         res = startsWith(p, '/') || (length(p) >= 3 && p(2) == ':' && p(3) == '\');
     end

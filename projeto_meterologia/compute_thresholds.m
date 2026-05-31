@@ -28,12 +28,10 @@ function thr = compute_thresholds(XTrain, YTrain)
     thr.hum_drizzle = mu_h_d;                     
     thr.hum_rain = (mu_h_d + mu_h_r) / 2;   
 
-    % fog tem sunshine muito baixa — limiar sun_none crítico para fog vs sun
     thr.sun_none = max(pcls('fog', 4, 75), pall(4, 15)); 
     thr.sun_low = pall(4, 40);
     thr.sun_mid = pall(4, 75);
 
-    % thunder tem vento mais alto — limiar storm calibrado para isso
     has_thunder = any(YTrain == 'thunder');
     if has_thunder && sum(YTrain=='thunder') > 5
         thr.wind_calm = pall(7, 35);
@@ -44,7 +42,6 @@ function thr = compute_thresholds(XTrain, YTrain)
         thr.wind_windy = pall(7, 75);
     end
 
-    % press_high: limiar para dias de sol (alta pressão = bom tempo)
     has_sun = any(YTrain == 'sun');
     if has_sun
         thr.press_high = pcls('sun', 15, 40);     

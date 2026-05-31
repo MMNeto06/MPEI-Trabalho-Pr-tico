@@ -1,30 +1,23 @@
-%{
-Esta função usa double hashing para reduzir colisões. 
-DJB2 em h1 e FNV-1a em h2
-%}
 function positions = bloom_hash(str, bf)
-    s = double(str);
+    s  = uint32(double(str));         
+
+    % DJB2 
     h1 = uint32(5381);
-    
-    for c = s
-        h1 = bitand(bitxor(bitshift(h1,5) + h1, uint32(c)), uint32(4294967295));
+    for c = s                         
+        h1 = bitand(bitxor(bitshift(h1,5) + h1, c), uint32(4294967295));
     end
 
+    % FNV-1a 
     h2 = uint32(2166136261);
     for c = s
-        h2 = bitand(bitxor(h2, uint32(c)) * uint32(16777619), uint32(4294967295));
+        h2 = bitand(bitxor(h2, c) * uint32(16777619), uint32(4294967295));
     end
 
     h1 = double(h1);
-    h2 = double(h2);
-    if mod(h2, 2) == 0
-        h2 = h2 + 1; 
-    end
+    h2 = double(h2) | 1;               
 
-    positions = zeros(1, bf.k);
-    for i = 0:(bf.k-1)
-        positions(i+1) = mod(h1 + i*h2, bf.m) + 1;
-    end
+    i  = (0:bf.k-1)';
+    positions = mod(h1 + i.*h2, bf.m) + 1;   
 end
 
 %{

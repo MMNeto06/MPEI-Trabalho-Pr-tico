@@ -9,7 +9,7 @@ addpath(fullfile(baseDir, 'minhash'));
 tic; 
 
 % 1. LER DADOS 
-data = readtable(fullfile(baseDir, 'data', 'aveiro.csv'));
+data = readtable(fullfile(baseDir, 'data', 'beijing.csv'));
 
 % Remover colunas que não são features/obsoleto
 data.date = [];  
@@ -50,29 +50,20 @@ bf_breaks = [2, 4, 10; ...   % precip:      0|<2|<4|<10|>=10
              10,18, 25; ...  % temp_max:    <10|<18|<25|>=25
              25,40, 55];     % wind_gusts:  <25|<40|<55|>=55
 
-for i = 1:size(XTrain,1)
-    key = build_bf_key(XTrain(i,:), bf_cols, bf_breaks);
-    bf = bloom_insert(bf, key);
+keysTrain = build_bf_key(XTrain, bf_cols, bf_breaks);
+for i = 1:length(keysTrain)
+    bf = bloom_insert(bf, keysTrain(i));
 end
 
 % 4. MINHASH 
 thresholds = compute_thresholds(XTrain, YTrain);
-trainTokens = cell(size(XTrain,1), 1);
-for i = 1:size(XTrain,1)
-    trainTokens{i} = extract_features(XTrain(i,:), thresholds);
-end
+trainTokens = extract_features(XTrain, thresholds);
 [sigTrain, hashData] = minhash_signature(trainTokens, 200);
 
 % 5. NAIVE BAYES (TREINO)
 [mu, sigma, logPrior, classes] = nb_train(XTrain, YTrain);
 
-% 6. PESOS DO ENSEMBLE (Não utilizado por agora, poderá ser removido na
-% versão final)
-w_nb = 0.55;
-w_mh = 0.40;
-w_bf = 0.05;
-
-% 7. ENSEMBLE PREDICTION
+% 6. ENSEMBLE PREDICTION
 % Naive Bayes isolado (para comparação)
 [~, p_nb_all] = nb_predict(XTest, mu, sigma, logPrior, classes);
 [~, idx_nb] = max(p_nb_all, [], 2);
@@ -82,19 +73,13 @@ fprintf('\nAccuracy Naive Bayes (só): %.4f (%.2f%%)\n', acc_nb, acc_nb*100);
 
 previsoes = ensemble_predict(XTest, YTrain, sigTrain, bf, ...
                              mu, sigma, logPrior, classes, hashData, ...
-                             w_nb, w_mh, w_bf, bf_cols, bf_breaks, thresholds);
+                             bf_cols, bf_breaks, thresholds);
 
-% 8. AVALIAÇÃO
+% 7. AVALIAÇÃO
 evaluate(YTest, previsoes, classes, XTest, bf, bf_cols, bf_breaks);
 
 fprintf('\n=== RESULTADOS DO ENSEMBLE ===\n');
 acc = mean(previsoes == YTest);
 fprintf('Accuracy Ensemble: %.4f (%.2f%%)\n', acc, acc*100);
-
-figure;
-cm = confusionchart(YTest, previsoes);
-cm.Title = 'Ensemble — Matriz de Confusão (Seattle Weather)';
-cm.RowSummary = 'row-normalized';
-cm.ColumnSummary = 'column-normalized';
 
 toc
