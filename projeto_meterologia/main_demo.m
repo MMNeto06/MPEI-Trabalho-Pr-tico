@@ -40,7 +40,10 @@ YTest = Y(testIdx);
 fprintf('\nTreino: %d amostras | Teste: %d amostras\n', size(XTrain,1), size(XTest,1));
 
 % 3. BLOOM FILTER 
-bf = bloom_init(50000, 7);
+m = 50000;
+k_opt = (m / size(XTrain,1)) * log(2); 
+k = round(k_opt)
+bf = bloom_init(m, k);
 
 bf_cols = [1, 17, 14, 12, 2, 7];
 bf_breaks = [2, 4, 10; ...   % precip:      0|<2|<4|<10|>=10

@@ -265,14 +265,16 @@ function weather_gui()
             logT2('Thresholds...'); thr2=compute_thresholds(XTr2,YTr2);
             setProgressT2(0.30);
             logT2('Bloom Filter...');
-            bf2=bloom_init(50000,7);
+            m = 50000; 
+            k_opt = (m / size(XTr2,1)) * log(2); 
+            k = round(k_opt);
+            bf2=bloom_init(m,k);
             keysTrain = build_bf_key(XTr2, BF_COLS, BF_BREAKS);
             for ii=1:length(keysTrain)
                 bf2=bloom_insert(bf2, keysTrain(ii));
             end
             setProgressT2(0.45);
             logT2('MinHash (200 hashes)...');
-            tTok2=cell(size(XTr2,1),1);
             trainTokens = extract_features(XTr2, thr2);
             [sig2, hd2] = minhash_signature(trainTokens, 200);
             setProgressT2(0.65);
