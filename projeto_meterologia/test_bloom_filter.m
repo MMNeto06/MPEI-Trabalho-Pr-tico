@@ -91,17 +91,16 @@ fprintf('  Dias definitivamente novos          : %d / %d\n', nNaoVisto, nTeste);
 fprintf('  FPR estimada do filtro              : %.4f%%\n\n', bloom_fp_rate(bf) * 100);
 
 fprintf('Teste 4: FPR Empírica vs Teórica \n');
-keysTest = build_bf_key(XTest, bf_cols, bf_breaks);
-keysTrain_set = unique(keysTrain);   % conjunto único de chaves de treino
+keysTrain_set = unique(keysTrain);
+keysTest_bulk = build_bf_key(XTest, bf_cols, bf_breaks);
 
-nFP = 0;
-nActualNew = 0;
-for i = 1:length(keysTest)
-    found = bloom_check(bf, keysTest(i));
-    isNew = ~any(strcmp(keysTest(i), keysTrain_set));
+nFP = 0; nActualNew = 0;
+for i = 1:size(XTest,1)
+    key_i = keysTest_bulk(i);
+    isNew = ~ismember(key_i, keysTrain_set);
     if isNew
         nActualNew = nActualNew + 1;
-        if found
+        if bloom_check(bf, key_i)
             nFP = nFP + 1;
         end
     end
@@ -110,13 +109,15 @@ end
 fpr_teorica = bloom_fp_rate(bf) * 100;
 if nActualNew > 0
     fpr_empirica = (nFP / nActualNew) * 100;
-    fprintf('  Elementos de teste realmente novos: %d / %d\n', nActualNew, length(keysTest));
+    fprintf('  Elementos de teste realmente novos: %d / %d\n', nActualNew, size(XTest,1));
     fprintf('  Falsos positivos observados       : %d\n', nFP);
     fprintf('  FPR empírica                      : %.4f%%\n', fpr_empirica);
     fprintf('  FPR teórica (bloom_fp_rate)        : %.4f%%\n\n', fpr_teorica);
 else
-    fprintf('  Todos os elementos de teste têm chave já presente no treino.\n');
-    fprintf('  FPR teórica: %.4f%%\n\n', fpr_teorica);
+    fprintf('  Nenhum elemento de teste com chave genuinamente nova.\n');
+    fprintf('  A discretização (bf_breaks) é suficientemente granular para\n');
+    fprintf('  cobrir toda a variação do dataset — FPR empírica não mensurável\n');
+    fprintf('  nestes dados. FPR teórica: %.4f%%\n\n', fpr_teorica);
 end
 
 fprintf('Teste 5: Efeito dos Parâmetros m e k na FPR\n');

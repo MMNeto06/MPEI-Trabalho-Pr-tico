@@ -1,23 +1,19 @@
 function positions = bloom_hash(str, bf)
-    s  = uint32(double(str));         
-
-    % DJB2 
+    s = uint32(double(char(str)));
     h1 = uint32(5381);
-    for c = s                         
-        h1 = bitand(bitxor(bitshift(h1,5) + h1, c), uint32(4294967295));
+    for c = s
+        h1 = bitxor(uint32(mod(double(bitshift(h1,5)) + double(h1), 2^32)), c);
     end
-
-    % FNV-1a 
     h2 = uint32(2166136261);
     for c = s
-        h2 = bitand(bitxor(h2, c) * uint32(16777619), uint32(4294967295));
+        h2 = uint32(mod(double(bitxor(h2, c)) * 16777619, 2^32));
     end
 
     h1 = double(h1);
-    h2 = double(h2) | 1;               
+    h2 = double(h2) | 1;
 
     i  = (0:bf.k-1)';
-    positions = mod(h1 + i.*h2, bf.m) + 1;   
+    positions = mod(h1 + i.*h2, bf.m) + 1;
 end
 
 %{
